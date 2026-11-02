@@ -17,6 +17,7 @@ export interface DecoStop {
   timeMin: number;
   runTimeMin: number;
   activeGasName: string;
+  activeSp: number;
   loopFO2: string;
   loopFHe: string;
   cns: number;
@@ -30,12 +31,16 @@ export interface SavedDivePlan {
   bottomDepthFt: number;
   bottomTimeMin: number;
   setpoint: number;
+  decoSetpoint: number;
+  decoSpSwitchDepthFt: number;
   gfLow: number;
   gfHigh: number;
   bottomDiluent: { o2: number; he: number };
   ascentDiluents: GasMix[];
   bailoutGases: GasMix[];
+  ccrRunTimeMin: number;
   ccrTtsMin: number;
+  ocRunTimeMin: number;
   ocTtsMin: number;
 }
 
@@ -70,6 +75,23 @@ const WATER_VAPOR_BAR = 0.0627;
 
 export function depthFtToBar(depthFt: number): number {
   return depthFt / 33 + 1.0;
+}
+
+// NOAA CNS% per minute lookup based on actual PO2 (ata)
+function getCnsPerMinute(po2: number): number {
+  if (po2 <= 0.5) return 0;
+  if (po2 <= 0.6) return 100 / 720;
+  if (po2 <= 0.7) return 100 / 570;
+  if (po2 <= 0.8) return 100 / 450;
+  if (po2 <= 0.9) return 100 / 360;
+  if (po2 <= 1.0) return 100 / 300;
+  if (po2 <= 1.1) return 100 / 240;
+  if (po2 <= 1.2) return 100 / 210;
+  if (po2 <= 1.3) return 100 / 180;
+  if (po2 <= 1.4) return 100 / 150;
+  if (po2 <= 1.5) return 100 / 120;
+  if (po2 <= 1.6) return 100 / 45;
+  return 100 / 15; // > 1.6 ata spike
 }
 
 // CCR Loop Physics & Safety Limits (Max Flush PO2 = 1.2, Max END = 130ft)
@@ -152,7 +174,7 @@ function getInspiredInertPressures(
       loopFHePct: Math.round(fHe * 100),
     };
   } else {
-    // CCR Mode: Loop maintains setpoint, Remainder is Diluent He/N2 ratio
+    // CCR Mode: Loop maintains setpoint (capped at ambient pressure if very shallow)
     const actualPO2 = Math.min(ambBar, setpoint);
     const pInertTotal = Math.max(0, ambBar - actualPO2 - WATER_VAPOR_BAR);
     const dilInertSum = fHe + fN2;
@@ -227,11 +249,14 @@ function selectActiveGasForDepth(
   };
 }
 
-// Full MultiDeco-style ZHL-16C + GF Schedule Generator (supports Multi-Diluent Flushes & OC Bailout)
+// Full MultiDeco-style ZHL-16C + GF Schedule Generator
+// Supports Stepped Ascent Setpoint Boost (e.g., 1.2 bottom -> 1.4+ @ 80ft), Multi-Diluent Flushes & OC Bailout
 export function runDecoSimulation(params: {
   bottomDepthFt: number;
   bottomTimeMin: number;
   setpoint: number;
+  decoSetpoint?: number;
+  decoSpSwitchDepthFt?: number;
   gfLowPct: number;
   gfHighPct: number;
   bottomDil: { o2: number; he: number };
@@ -242,6 +267,8 @@ export function runDecoSimulation(params: {
 }) {
   const gfLow = params.gfLowPct / 100;
   const gfHigh = params.gfHighPct / 100;
+  const decoSp = params.decoSetpoint ?? params.setpoint;
+  const decoSpSwitchFt = params.decoSpSwitchDepthFt ?? 0;
 
   // Surface saturation in air (0.79 * (1.0 - 0.0627))
   let pN2: number[] = new Array(16).fill(0.79 * (1.0 - WATER_VAPOR_BAR));
@@ -251,7 +278,7 @@ export function runDecoSimulation(params: {
   let cns = 0;
   let otu = 0;
 
-  // 1. Descent (60 ft/min)
+  // 1. Descent (60 ft/min) on Bottom Setpoint
   const descentTime = Math.max(1, Math.round(params.bottomDepthFt / 60));
   const midDescentInsp = getInspiredInertPressures(
     params.bottomDepthFt / 2,
@@ -270,8 +297,12 @@ export function runDecoSimulation(params: {
   pN2 = afterDescent.nextN2;
   pHe = afterDescent.nextHe;
   runTime += descentTime;
+  cns += descentTime * getCnsPerMinute(midDescentInsp.actualPO2);
+  otu +=
+    descentTime *
+    Math.pow(Math.max(0, (midDescentInsp.actualPO2 - 0.5) / 0.5), 0.83);
 
-  // 2. Bottom Segment (Always on CCR up until end of bottom time)
+  // 2. Bottom Segment (Always on CCR at Bottom Setpoint up until end of bottom time)
   const botRemainTime = Math.max(1, params.bottomTimeMin - descentTime);
   const botInsp = getInspiredInertPressures(
     params.bottomDepthFt,
@@ -290,8 +321,10 @@ export function runDecoSimulation(params: {
   pN2 = afterBottom.nextN2;
   pHe = afterBottom.nextHe;
   runTime += botRemainTime;
-  cns += botRemainTime * (botInsp.actualPO2 >= 1.3 ? 0.56 : 0.42);
-  otu += botRemainTime * Math.pow(Math.max(0, (botInsp.actualPO2 - 0.5) / 0.5), 0.83);
+  cns += botRemainTime * getCnsPerMinute(botInsp.actualPO2);
+  otu +=
+    botRemainTime *
+    Math.pow(Math.max(0, (botInsp.actualPO2 - 0.5) / 0.5), 0.83);
 
   // 3. Find First Stop Depth using GF Low
   const rawCeilingBar = getCeilingBar(pN2, pHe, gfLow);
@@ -305,6 +338,10 @@ export function runDecoSimulation(params: {
   const distToFirstStop = Math.max(0, params.bottomDepthFt - firstStopFt);
   const ascTimeMin = Math.max(1, Math.round(distToFirstStop / 30));
   const midAscDepth = (params.bottomDepthFt + firstStopFt) / 2;
+  const ascActiveSp =
+    decoSpSwitchFt > 0 && midAscDepth <= decoSpSwitchFt
+      ? decoSp
+      : params.setpoint;
   const ascGas = selectActiveGasForDepth(
     midAscDepth,
     params.bottomDil,
@@ -316,7 +353,7 @@ export function runDecoSimulation(params: {
     ascGas.o2,
     ascGas.he,
     params.mode,
-    params.setpoint
+    ascActiveSp
   );
   const afterAsc = loadTissuesConstant(
     pN2,
@@ -328,11 +365,18 @@ export function runDecoSimulation(params: {
   pN2 = afterAsc.nextN2;
   pHe = afterAsc.nextHe;
   runTime += ascTimeMin;
+  cns += ascTimeMin * getCnsPerMinute(ascInsp.actualPO2);
+  otu +=
+    ascTimeMin *
+    Math.pow(Math.max(0, (ascInsp.actualPO2 - 0.5) / 0.5), 0.83);
 
   if (params.mode === "OC") {
-    const cuFt = ascTimeMin * params.workingSacCuFtMin * depthFtToBar(midAscDepth);
+    const cuFt =
+      ascTimeMin * params.workingSacCuFtMin * depthFtToBar(midAscDepth);
     gasUsageCuFt[ascGas.name] = (gasUsageCuFt[ascGas.name] || 0) + cuFt;
   }
+
+  let totalStopMin = 0;
 
   // 4. Walk the GF Slope from First Stop to Surface (10ft increments)
   for (let stopDepth = firstStopFt; stopDepth >= 10; stopDepth -= 10) {
@@ -341,6 +385,12 @@ export function runDecoSimulation(params: {
       firstStopFt > 0
         ? gfHigh + ((gfHigh - gfLow) / (0 - firstStopFt)) * nextDepth
         : gfHigh;
+
+    // Apply stepped Ascent/Deco Setpoint boost once at or shallower than decoSpSwitchFt
+    const stopActiveSp =
+      decoSpSwitchFt > 0 && stopDepth <= decoSpSwitchFt
+        ? decoSp
+        : params.setpoint;
 
     const activeGas = selectActiveGasForDepth(
       stopDepth,
@@ -353,7 +403,7 @@ export function runDecoSimulation(params: {
       activeGas.o2,
       activeGas.he,
       params.mode,
-      params.setpoint
+      stopActiveSp
     );
 
     let stopMin = 0;
@@ -375,12 +425,17 @@ export function runDecoSimulation(params: {
 
     if (stopMin > 0) {
       runTime += stopMin;
-      cns += stopMin * (stopInsp.actualPO2 >= 1.4 ? 0.83 : 0.56);
-      otu += stopMin * Math.pow(Math.max(0, (stopInsp.actualPO2 - 0.5) / 0.5), 0.83);
+      totalStopMin += stopMin;
+      cns += stopMin * getCnsPerMinute(stopInsp.actualPO2);
+      otu +=
+        stopMin *
+        Math.pow(Math.max(0, (stopInsp.actualPO2 - 0.5) / 0.5), 0.83);
 
       if (params.mode === "OC") {
-        const cuFt = stopMin * params.decoSacCuFtMin * depthFtToBar(stopDepth);
-        gasUsageCuFt[activeGas.name] = (gasUsageCuFt[activeGas.name] || 0) + cuFt;
+        const cuFt =
+          stopMin * params.decoSacCuFtMin * depthFtToBar(stopDepth);
+        gasUsageCuFt[activeGas.name] =
+          (gasUsageCuFt[activeGas.name] || 0) + cuFt;
       }
 
       stops.push({
@@ -388,6 +443,7 @@ export function runDecoSimulation(params: {
         timeMin: stopMin,
         runTimeMin: runTime,
         activeGasName: activeGas.name,
+        activeSp: Number(stopInsp.actualPO2.toFixed(2)),
         loopFO2: `${stopInsp.loopFO2Pct}%`,
         loopFHe: `${stopInsp.loopFHePct}%`,
         cns: Math.round(cns),
@@ -396,10 +452,15 @@ export function runDecoSimulation(params: {
     }
   }
 
+  // TTS = Ascent time + Total Deco Stop time (Time from leaving bottom to reaching surface)
+  const ttsMin = Math.max(0, runTime - params.bottomTimeMin);
+
   return {
     stops,
-    totalRunTimeMin: runTime,
-    totalDecoMin: Math.max(0, runTime - params.bottomTimeMin),
+    totalRunTimeMin: runTime, // Full Dive Run Time (RT)
+    ttsMin, // Time To Surface from leaving bottom (Ascent + Deco Stops)
+    totalDecoStopMin: totalStopMin, // Pure hang time on deco stops
+    ascentTransitMin: ascTimeMin,
     totalCns: Math.round(cns),
     totalOtu: Math.round(otu),
     gasUsageCuFt,
