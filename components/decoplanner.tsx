@@ -16,16 +16,20 @@ import {
   X,
   Wind,
   TrendingUp,
+  Settings,
+  Package,
+  Eye,
 } from "lucide-react";
 import {
   GasMix,
+  MultiDecoSettings,
   evaluateDiluentAtDepth,
   runDecoSimulation,
 } from "../lib/decoEngine";
 
 interface ExtendedGasMix extends GasMix {
-  maxPo2Limit: number; // 1.4 or 1.6 for OC MOD calculation
-  ccrSwitchDepthFt: number; // Depth at which to plumb & flush into CCR loop on ascent
+  maxPo2Limit: number;
+  ccrSwitchDepthFt: number;
 }
 
 interface FavoritePlan {
@@ -44,6 +48,7 @@ interface FavoritePlan {
   workingSac: number;
   decoSac: number;
   includeReserve: boolean;
+  settings: MultiDecoSettings;
   gases: ExtendedGasMix[];
 }
 
@@ -56,7 +61,61 @@ interface TelemetrySample {
   setpoint: number;
 }
 
-// Helper: Calculate MOD in feet from O2% and Max PO2 (rounded down to 10ft stop increment)
+const DEFAULT_LOCKER_TANKS: ExtendedGasMix[] = [
+  {
+    id: "lck_1",
+    name: "TMx 18/45 (AL80)",
+    o2: 18,
+    he: 45,
+    n2: 37,
+    maxPo2Limit: 1.4,
+    switchDepthFt: 220,
+    ccrSwitchDepthFt: 100,
+    tankSizeCuFt: 80,
+    workingPsi: 3000,
+    isUsedAsDiluentOnAscent: true,
+  },
+  {
+    id: "lck_2",
+    name: "EAN32 (AL80)",
+    o2: 32,
+    he: 0,
+    n2: 68,
+    maxPo2Limit: 1.4,
+    switchDepthFt: 110,
+    ccrSwitchDepthFt: 90,
+    tankSizeCuFt: 80,
+    workingPsi: 3000,
+    isUsedAsDiluentOnAscent: false,
+  },
+  {
+    id: "lck_3",
+    name: "EAN50 (AL80)",
+    o2: 50,
+    he: 0,
+    n2: 50,
+    maxPo2Limit: 1.6,
+    switchDepthFt: 70,
+    ccrSwitchDepthFt: 40,
+    tankSizeCuFt: 80,
+    workingPsi: 3000,
+    isUsedAsDiluentOnAscent: false,
+  },
+  {
+    id: "lck_4",
+    name: "O2 100% (AL40)",
+    o2: 100,
+    he: 0,
+    n2: 0,
+    maxPo2Limit: 1.6,
+    switchDepthFt: 20,
+    ccrSwitchDepthFt: 20,
+    tankSizeCuFt: 40,
+    workingPsi: 3000,
+    isUsedAsDiluentOnAscent: false,
+  },
+];
+
 function calcModFt(o2Pct: number, maxPo2: number): number {
   const fo2 = Math.max(0.05, o2Pct / 100);
   const rawFt = (maxPo2 / fo2 - 1) * 33;
@@ -65,13 +124,31 @@ function calcModFt(o2Pct: number, maxPo2: number): number {
 
 export default function DecoPlanner() {
   const [subTab, setSubTab] = useState<"planner" | "compare">("planner");
+  const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
+  const [showTankLocker, setShowTankLocker] = useState<boolean>(false);
+
+  // Toast / Status Feedback Banner
+  const [statusToast, setStatusToast] = useState<string | null>(null);
+  const triggerToast = (msg: string) => {
+    setStatusToast(msg);
+    setTimeout(() => setStatusToast(null), 3200);
+  };
+
+  // MultiDeco Suite Settings State
+  const [settings, setSettings] = useState<MultiDecoSettings>({
+    lastStopDepthFt: 10,
+    descentRateFtMin: 60,
+    ascentRateFtMin: 30,
+    ocProblemTimeMin: 3,
+    o2Narcotic: true,
+  });
 
   // Dive Profile Inputs
   const [bottomDepthFt, setBottomDepthFt] = useState<number>(150);
   const [bottomTimeMin, setBottomTimeMin] = useState<number>(25);
   const [setpoint, setSetpoint] = useState<number>(1.2);
 
-  // Stepped Ascent / Deco Setpoint Boost State (e.g., 1.2 bottom -> 1.4 at 80ft)
+  // Stepped Ascent / Deco Setpoint Boost State
   const [useDecoSpBoost, setUseDecoSpBoost] = useState<boolean>(true);
   const [decoSetpoint, setDecoSetpoint] = useState<number>(1.4);
   const [decoSpSwitchDepthFt, setDecoSpSwitchDepthFt] = useState<number>(80);
@@ -86,7 +163,10 @@ export default function DecoPlanner() {
   const [decoSac, setDecoSac] = useState<number>(0.5);
   const [includeThirdsReserve, setIncludeThirdsReserve] = useState<boolean>(true);
 
-  // Offboard Bailout & Plumb-In Ascent Diluent Cylinders
+  // Section 3 Table View Mode ("BOTH" | "CCR" | "OC")
+  const [tableViewMode, setTableViewMode] = useState<"BOTH" | "CCR" | "OC">("BOTH");
+
+  // Active Dive Cylinders
   const [gases, setGases] = useState<ExtendedGasMix[]>([
     {
       id: "g1",
@@ -129,7 +209,10 @@ export default function DecoPlanner() {
     },
   ]);
 
-  // Tank Builder / Editor State (Click any tank to edit)
+  // Tank Locker State (Favorite Tanks)
+  const [tankLocker, setTankLocker] = useState<ExtendedGasMix[]>(DEFAULT_LOCKER_TANKS);
+
+  // Tank Builder / Editor State
   const [editingGasId, setEditingGasId] = useState<string | null>(null);
   const [formO2, setFormO2] = useState<number>(32);
   const [formHe, setFormHe] = useState<number>(0);
@@ -140,42 +223,73 @@ export default function DecoPlanner() {
   const [formWorkingPsi, setFormWorkingPsi] = useState<number>(3000);
   const [formPlumbIn, setFormPlumbIn] = useState<boolean>(false);
 
-  // Favorites State (Saved in localStorage)
+  // Favorites State (Saved Dive Plans)
   const [favorites, setFavorites] = useState<FavoritePlan[]>([]);
+  const [selectedFavId, setSelectedFavId] = useState<string>("");
   const [favName, setFavName] = useState<string>("");
 
   // Subsurface Plan vs. Actual Telemetry State
   const [actualSamples, setActualSamples] = useState<TelemetrySample[]>([]);
   const [logName, setLogName] = useState<string>("");
 
-  // Load saved favorites on mount
+  // Load saved Favorites, Tank Locker, and MultiDeco Settings from localStorage
   useEffect(() => {
-    const saved = localStorage.getItem("p2_deco_favorites_v2");
-    if (saved) {
-      try {
-        setFavorites(JSON.parse(saved));
-      } catch (e) {
-        console.error(e);
+    try {
+      const savedFavs = localStorage.getItem("p2_deco_favorites_v3");
+      if (savedFavs) setFavorites(JSON.parse(savedFavs));
+
+      const savedLocker = localStorage.getItem("p2_tank_locker_v1");
+      if (savedLocker) setTankLocker(JSON.parse(savedLocker));
+
+      const savedDefaults = localStorage.getItem("p2_multideco_defaults_v1");
+      if (savedDefaults) {
+        const d = JSON.parse(savedDefaults);
+        if (d.settings) setSettings(d.settings);
+        if (d.gfLow) setGfLow(d.gfLow);
+        if (d.gfHigh) setGfHigh(d.gfHigh);
+        if (d.workingSac) setWorkingSac(d.workingSac);
+        if (d.decoSac) setDecoSac(d.decoSac);
+        if (d.setpoint) setSetpoint(d.setpoint);
       }
+    } catch (e) {
+      console.error(e);
     }
   }, []);
 
-  const saveFavoritesToStorage = (updated: FavoritePlan[]) => {
-    setFavorites(updated);
-    localStorage.setItem("p2_deco_favorites_v2", JSON.stringify(updated));
+  const saveDefaultsToStorage = () => {
+    localStorage.setItem(
+      "p2_multideco_defaults_v1",
+      JSON.stringify({
+        settings,
+        gfLow,
+        gfHigh,
+        workingSac,
+        decoSac,
+        setpoint,
+      })
+    );
+    triggerToast("Saved MultiDeco Settings & GF/SAC as App Defaults ✓");
+    setShowSettingsModal(false);
   };
 
-  // Auto-calculate MOD & CCR Flush Depth whenever O2% or Max PO2 changes in the form
+  const saveFavoritesToStorage = (updated: FavoritePlan[]) => {
+    setFavorites(updated);
+    localStorage.setItem("p2_deco_favorites_v3", JSON.stringify(updated));
+  };
+
+  const saveLockerToStorage = (updated: ExtendedGasMix[]) => {
+    setTankLocker(updated);
+    localStorage.setItem("p2_tank_locker_v1", JSON.stringify(updated));
+  };
+
+  // Auto-calculate MOD & CCR Flush Depth whenever O2% or Max PO2 changes
   const handleFormO2orPo2Change = (newO2: number, newMaxPo2: number) => {
     setFormO2(newO2);
     setFormMaxPo2(newMaxPo2);
-    const autoOcMod = calcModFt(newO2, newMaxPo2);
-    const autoCcrFlushMod = calcModFt(newO2, 1.2);
-    setFormSwitchFt(autoOcMod);
-    setFormCcrSwitchFt(autoCcrFlushMod);
+    setFormSwitchFt(calcModFt(newO2, newMaxPo2));
+    setFormCcrSwitchFt(calcModFt(newO2, 1.2));
   };
 
-  // Load a tank into the editor when clicked
   const startEditingGas = (g: ExtendedGasMix) => {
     setEditingGasId(g.id);
     setFormO2(g.o2);
@@ -197,7 +311,7 @@ export default function DecoPlanner() {
     setFormPlumbIn(false);
   };
 
-  const saveOrAddGas = () => {
+  const buildGasFromForm = (): ExtendedGasMix => {
     const cleanO2 = Math.min(100, Math.max(5, formO2));
     const cleanHe = Math.min(100 - cleanO2, Math.max(0, formHe));
     const n2 = Math.max(0, 100 - cleanO2 - cleanHe);
@@ -208,7 +322,7 @@ export default function DecoPlanner() {
         ? "O2 100%"
         : `EAN${cleanO2}`;
 
-    const newEntry: ExtendedGasMix = {
+    return {
       id: editingGasId || "gas_" + Date.now(),
       name: label,
       o2: cleanO2,
@@ -221,16 +335,45 @@ export default function DecoPlanner() {
       workingPsi: formWorkingPsi,
       isUsedAsDiluentOnAscent: formPlumbIn,
     };
+  };
 
+  const saveOrAddGas = () => {
+    const newEntry = buildGasFromForm();
     if (editingGasId) {
       setGases(gases.map((g) => (g.id === editingGasId ? newEntry : g)));
       setEditingGasId(null);
+      triggerToast(`Updated ${newEntry.name} in Dive Plan ✓`);
     } else {
       setGases([...gases, newEntry]);
+      triggerToast(`Added ${newEntry.name} to Dive Plan ✓`);
     }
   };
 
-  // One-click Add Suggested Low-O2 or High-O2 Bailout Mix
+  const saveFormGasToLocker = () => {
+    const entry = buildGasFromForm();
+    const lockerItem: ExtendedGasMix = {
+      ...entry,
+      id: "lck_" + Date.now(),
+      name: `${entry.name} (${entry.tankSizeCuFt}cf)`,
+    };
+    saveLockerToStorage([lockerItem, ...tankLocker]);
+    triggerToast(`Saved ${lockerItem.name} to Tank Locker ✓`);
+  };
+
+  const addTankFromLocker = (lck: ExtendedGasMix) => {
+    const clone: ExtendedGasMix = {
+      ...lck,
+      id: "gas_" + Date.now() + Math.random().toString(36).slice(2, 5),
+      name: lck.name.replace(/\s*\(\d+cf\)/i, ""),
+    };
+    setGases([...gases, clone]);
+    triggerToast(`Deployed ${clone.name} from Tank Locker ✓`);
+  };
+
+  const removeTankFromLocker = (id: string) => {
+    saveLockerToStorage(tankLocker.filter((t) => t.id !== id));
+  };
+
   const addSuggestedMix = (mixStr: string, isLowO2: boolean) => {
     const nums = mixStr.replace("TMx", "").trim().split("/");
     const o2 = parseInt(nums[0], 10) || (isLowO2 ? 18 : 50);
@@ -254,6 +397,7 @@ export default function DecoPlanner() {
       isUsedAsDiluentOnAscent: isLowO2,
     };
     setGases([...gases, newGas]);
+    triggerToast(`Added Suggested ${newGas.name} (MOD ${modFt}ft) ✓`);
   };
 
   const toggleGasDiluentAscent = (id: string) => {
@@ -277,11 +421,11 @@ export default function DecoPlanner() {
     setGases(gases.filter((g) => g.id !== id));
   };
 
-  // Save & Load Favorites
+  // Save & Load Favorite Plans with Feedback Toast
   const saveCurrentAsFavorite = () => {
     const title =
       favName.trim() ||
-      `${bottomDepthFt}ft/${bottomTimeMin}m (${dilO2}/${dilHe})`;
+      `${bottomDepthFt}ft / ${bottomTimeMin}m (Dil ${dilO2}/${dilHe})`;
     const fav: FavoritePlan = {
       id: "fav_" + Date.now(),
       name: title,
@@ -298,17 +442,24 @@ export default function DecoPlanner() {
       workingSac,
       decoSac,
       includeReserve: includeThirdsReserve,
+      settings,
       gases,
     };
-    saveFavoritesToStorage([fav, ...favorites]);
+    const updated = [fav, ...favorites];
+    saveFavoritesToStorage(updated);
+    setSelectedFavId(fav.id);
     setFavName("");
+    triggerToast(`Saved Dive Plan: "${title}" ✓`);
   };
 
-  const loadFavorite = (fav: FavoritePlan) => {
+  const handleSelectFavoriteDropdown = (id: string) => {
+    setSelectedFavId(id);
+    const fav = favorites.find((f) => f.id === id);
+    if (!fav) return;
     setBottomDepthFt(fav.bottomDepthFt);
     setBottomTimeMin(fav.bottomTimeMin);
     setSetpoint(fav.setpoint);
-    setUseDecoSpBoost(fav.useDecoSpBoost ?? false);
+    setUseDecoSpBoost(fav.useDecoSpBoost ?? true);
     setDecoSetpoint(fav.decoSetpoint ?? 1.4);
     setDecoSpSwitchDepthFt(fav.decoSpSwitchDepthFt ?? 80);
     setGfLow(fav.gfLow);
@@ -318,18 +469,31 @@ export default function DecoPlanner() {
     setWorkingSac(fav.workingSac);
     setDecoSac(fav.decoSac);
     setIncludeThirdsReserve(fav.includeReserve);
+    if (fav.settings) setSettings(fav.settings);
     setGases(fav.gases);
     setEditingGasId(null);
+    triggerToast(`Loaded Saved Plan: "${fav.name}" ✓`);
   };
 
-  const deleteFavorite = (id: string) => {
-    saveFavoritesToStorage(favorites.filter((f) => f.id !== id));
+  const deleteSelectedFavorite = () => {
+    if (!selectedFavId) return;
+    const target = favorites.find((f) => f.id === selectedFavId);
+    saveFavoritesToStorage(favorites.filter((f) => f.id !== selectedFavId));
+    setSelectedFavId("");
+    if (target) triggerToast(`Removed Plan: "${target.name}"`);
   };
 
   // 1. Evaluate Diluent Physics at Bottom Depth
   const dilEval = useMemo(
-    () => evaluateDiluentAtDepth(bottomDepthFt, dilO2, dilHe, setpoint),
-    [bottomDepthFt, dilO2, dilHe, setpoint]
+    () =>
+      evaluateDiluentAtDepth(
+        bottomDepthFt,
+        dilO2,
+        dilHe,
+        setpoint,
+        settings.o2Narcotic
+      ),
+    [bottomDepthFt, dilO2, dilHe, setpoint, settings.o2Narcotic]
   );
 
   // Map gases so CCR simulation uses ccrSwitchDepthFt when plumbed in, and OC uses switchDepthFt
@@ -342,7 +506,7 @@ export default function DecoPlanner() {
     [gases]
   );
 
-  // 2. Run Closed-Circuit (CCR) Deco Simulation (including stepped Deco Setpoint boost if enabled)
+  // 2. Run Closed-Circuit (CCR) Deco Simulation
   const ccrPlan = useMemo(
     () =>
       runDecoSimulation({
@@ -358,6 +522,7 @@ export default function DecoPlanner() {
         mode: "CCR",
         workingSacCuFtMin: workingSac,
         decoSacCuFtMin: decoSac,
+        settings,
       }),
     [
       bottomDepthFt,
@@ -373,6 +538,7 @@ export default function DecoPlanner() {
       ccrMappedGases,
       workingSac,
       decoSac,
+      settings,
     ]
   );
 
@@ -390,6 +556,7 @@ export default function DecoPlanner() {
         mode: "OC",
         workingSacCuFtMin: workingSac,
         decoSacCuFtMin: decoSac,
+        settings,
       }),
     [
       bottomDepthFt,
@@ -402,6 +569,7 @@ export default function DecoPlanner() {
       gases,
       workingSac,
       decoSac,
+      settings,
     ]
   );
 
@@ -484,7 +652,9 @@ export default function DecoPlanner() {
         d = bottomDepthFt + Math.round(Math.sin(t) * 4);
       } else {
         const matchStop = ccrPlan.stops.find((s) => t <= s.runTimeMin);
-        d = matchStop ? matchStop.depthFt + (t % 2 === 0 ? 3 : -2) : 15;
+        d = matchStop
+          ? matchStop.depthFt + (t % 2 === 0 ? 3 : -2)
+          : settings.lastStopDepthFt;
       }
 
       const sp =
@@ -535,9 +705,6 @@ export default function DecoPlanner() {
       )
     );
 
-    const firstHighSpSample = actualSamples.find((s) => s.setpoint >= 1.2);
-    const spSwitchMin = firstHighSpSample ? firstHighSpSample.timeMin : 0;
-
     const suggestions: {
       status: "good" | "warn" | "alert";
       title: string;
@@ -549,7 +716,7 @@ export default function DecoPlanner() {
         status: "warn",
         title: `Loop PPO2 Oscillation (±${avgPo2Deviation.toFixed(2)} ata)`,
         detail:
-          "Your bottom PPO2 fluctuated noticeably around setpoint. Avoid using counterlungs for buoyancy adjustments and keep minimum loop volume so the ADV doesn't inject uncommanded diluent on deep inhalations.",
+          "Your bottom PPO2 fluctuated noticeably around setpoint. Maintain minimum loop volume so the ADV doesn't inject uncommanded diluent.",
       });
     } else {
       suggestions.push({
@@ -557,42 +724,22 @@ export default function DecoPlanner() {
         title: "Tight Loop Volume & Setpoint Control",
         detail: `Average loop PPO2 stayed within ±${avgPo2Deviation.toFixed(
           2
-        )} ata of your ${setpoint} setpoint during the bottom phase.`,
+        )} ata of your ${setpoint} setpoint.`,
       });
     }
 
     if (maxCellSpread >= 0.08) {
       suggestions.push({
         status: "alert",
-        title: `Sensor Divergence Detected (${maxCellSpread.toFixed(
-          2
-        )} ata spread)`,
+        title: `Sensor Divergence (${maxCellSpread.toFixed(2)} ata spread)`,
         detail:
-          "Cell #3 tracked lower than Cells #1 and #2 at high PPO2. Inspect the head sensor holder for condensation on the Teflon face or check if Cell #3 is beginning to current-limit.",
-      });
-    } else {
-      suggestions.push({
-        status: "good",
-        title: "All 3 O2 Cells Tracking Linearly",
-        detail: `Max spread across all three sensors was only ${maxCellSpread.toFixed(
-          2
-        )} ata.`,
-      });
-    }
-
-    if (spSwitchMin > 3.5) {
-      suggestions.push({
-        status: "warn",
-        title: `Delayed High Setpoint Switch (Min ${spSwitchMin})`,
-        detail:
-          "Switching from 0.7 to bottom setpoint after reaching bottom increases inert gas loading in fast tissues during descent. Consider enabling Auto SP Up at 70ft on your Petrel/Perdix.",
+          "Cell #3 tracked lower than Cells #1 and #2 at high PPO2. Inspect for moisture on the sensor face or early current-limiting.",
       });
     }
 
     return {
       maxActualDepth,
       actualRuntime: actualSamples[actualSamples.length - 1]?.timeMin || 0,
-      avgPo2Deviation: avgPo2Deviation.toFixed(2),
       maxCellSpread: maxCellSpread.toFixed(2),
       suggestions,
     };
@@ -601,84 +748,252 @@ export default function DecoPlanner() {
   const plumbedInGases = gases.filter((g) => g.isUsedAsDiluentOnAscent);
 
   return (
-    <div className="space-y-4">
-      {/* Sub-navigation: Deco Planner vs. Subsurface Plan-vs-Actual */}
-      <div className="grid grid-cols-2 gap-2 bg-slate-900 p-1.5 rounded-xl border border-slate-800">
+    <div className="space-y-3.5 relative">
+      {/* FLOATING CONFIRMATION TOAST */}
+      {statusToast && (
+        <div className="sticky top-14 z-40 bg-emerald-950 border-2 border-emerald-400 text-emerald-100 px-3.5 py-2.5 rounded-xl shadow-2xl flex items-center justify-between text-xs font-mono font-bold animate-fade-in">
+          <span className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            {statusToast}
+          </span>
+          <button onClick={() => setStatusToast(null)}>
+            <X className="w-3.5 h-3.5 text-emerald-300" />
+          </button>
+        </div>
+      )}
+
+      {/* TOP BAR: SUBTABS + MULTIDECO SETTINGS BUTTON */}
+      <div className="flex items-center gap-2">
+        <div className="flex-1 grid grid-cols-2 gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800">
+          <button
+            onClick={() => setSubTab("planner")}
+            className={`py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+              subTab === "planner"
+                ? "bg-purple-500 text-slate-950"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            <Compass className="w-3.5 h-3.5" /> Deco Planner
+          </button>
+          <button
+            onClick={() => setSubTab("compare")}
+            className={`py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+              subTab === "compare"
+                ? "bg-cyan-500 text-slate-950"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            <Activity className="w-3.5 h-3.5" /> Log Debrief
+          </button>
+        </div>
+
         <button
-          onClick={() => setSubTab("planner")}
-          className={`py-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
-            subTab === "planner"
-              ? "bg-purple-500 text-slate-950"
-              : "text-slate-400 hover:text-white"
+          onClick={() => setShowSettingsModal(!showSettingsModal)}
+          className={`px-3 py-2.5 rounded-xl border text-xs font-mono font-bold flex items-center gap-1.5 transition-all ${
+            showSettingsModal
+              ? "bg-amber-500 text-slate-950 border-amber-400"
+              : "bg-slate-900 text-amber-400 border-slate-800 hover:border-amber-500/50"
           }`}
+          title="MultiDeco Engine Settings & Defaults"
         >
-          <Compass className="w-4 h-4" /> ZHL-16C Deco & Bailout
-        </button>
-        <button
-          onClick={() => setSubTab("compare")}
-          className={`py-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
-            subTab === "compare"
-              ? "bg-cyan-500 text-slate-950"
-              : "text-slate-400 hover:text-white"
-          }`}
-        >
-          <Activity className="w-4 h-4" /> Plan vs. Actual Log
+          <Settings className="w-4 h-4" />
+          <span className="hidden sm:inline">Settings</span>
         </button>
       </div>
 
+      {/* MULTIDECO FULL SETTINGS SUITE DRAWER */}
+      {showSettingsModal && (
+        <div className="bg-slate-900 border-2 border-amber-500/60 rounded-2xl p-4 space-y-3.5 shadow-2xl">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+            <span className="text-xs font-mono uppercase text-amber-400 font-bold flex items-center gap-1.5">
+              <Settings className="w-4 h-4" /> MultiDeco Engine Settings & Defaults
+            </span>
+            <button
+              onClick={() => setShowSettingsModal(false)}
+              className="text-slate-400 hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-mono text-slate-400 block mb-1">
+                LAST STOP DEPTH
+              </label>
+              <div className="grid grid-cols-3 gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                {([10, 15, 20] as const).map((d) => (
+                  <button
+                    key={d}
+                    onClick={() =>
+                      setSettings({ ...settings, lastStopDepthFt: d })
+                    }
+                    className={`py-1.5 rounded-lg font-mono text-xs font-bold transition-all ${
+                      settings.lastStopDepthFt === d
+                        ? "bg-amber-500 text-slate-950"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    {d} ft
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-mono text-slate-400 block mb-1">
+                OC PROBLEM TIME @ BOTTOM
+              </label>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  min={0}
+                  max={15}
+                  value={settings.ocProblemTimeMin}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      ocProblemTimeMin: Number(e.target.value),
+                    })
+                  }
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 font-mono text-xs text-white text-center font-bold"
+                />
+                <span className="text-[10px] font-mono text-slate-400 shrink-0">
+                  MIN
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2.5">
+            <div>
+              <label className="text-[10px] font-mono text-slate-400 block mb-1">
+                DESCENT RATE (FT/MIN)
+              </label>
+              <input
+                type="number"
+                value={settings.descentRateFtMin}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    descentRateFtMin: Number(e.target.value),
+                  })
+                }
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 font-mono text-xs text-white text-center font-bold"
+              />
+            </div>
+
+            <div>
+              <label className="text-[10px] font-mono text-slate-400 block mb-1">
+                ASCENT RATE (FT/MIN)
+              </label>
+              <input
+                type="number"
+                value={settings.ascentRateFtMin}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    ascentRateFtMin: Number(e.target.value),
+                  })
+                }
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 font-mono text-xs text-white text-center font-bold"
+              />
+            </div>
+
+            <div>
+              <label className="text-[10px] font-mono text-slate-400 block mb-1">
+                END CALCULATION
+              </label>
+              <button
+                onClick={() =>
+                  setSettings({
+                    ...settings,
+                    o2Narcotic: !settings.o2Narcotic,
+                  })
+                }
+                className={`w-full py-2 px-2 rounded-xl font-mono text-[11px] font-bold border transition-all ${
+                  settings.o2Narcotic
+                    ? "bg-cyan-500/20 border-cyan-500/50 text-cyan-300"
+                    : "bg-slate-950 border-slate-700 text-slate-400"
+                }`}
+              >
+                {settings.o2Narcotic ? "O2 + N2 Narc" : "N2 Only"}
+              </button>
+            </div>
+          </div>
+
+          <button
+            onClick={saveDefaultsToStorage}
+            className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5"
+          >
+            <Check className="w-4 h-4" /> Save All Settings, GFs & SAC as App
+            Defaults
+          </button>
+        </div>
+      )}
+
       {subTab === "planner" && (
         <>
-          {/* SAVED FAVORITES BAR */}
+          {/* SAVED DIVE PLANS DROPDOWN & SAVE BAR */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-mono uppercase text-amber-400 font-bold flex items-center gap-1.5">
-                <Bookmark className="w-3.5 h-3.5" /> Saved Favorite Plans & Tank Fleets
+                <Bookmark className="w-3.5 h-3.5" /> Saved Dive Plans (
+                {favorites.length})
               </span>
-              <span className="text-[10px] font-mono text-slate-500">
-                {favorites.length} Saved
-              </span>
+              {selectedFavId && (
+                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30">
+                  Active Plan Loaded
+                </span>
+              )}
             </div>
 
+            {/* Dropdown Selector for Saved Dives */}
+            <div className="flex gap-2">
+              <select
+                value={selectedFavId}
+                onChange={(e) => handleSelectFavoriteDropdown(e.target.value)}
+                className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-cyan-300 font-bold"
+              >
+                <option value="">
+                  {favorites.length === 0
+                    ? "-- No Saved Plans Yet (Save One Below) --"
+                    : "-- Select a Saved Dive Plan to Load --"}
+                </option>
+                {favorites.map((fav) => (
+                  <option key={fav.id} value={fav.id}>
+                    {fav.name} ({fav.bottomDepthFt}ft / {fav.bottomTimeMin}m)
+                  </option>
+                ))}
+              </select>
+
+              {selectedFavId && (
+                <button
+                  onClick={deleteSelectedFavorite}
+                  className="px-3 py-2 bg-red-950/60 hover:bg-red-900/80 border border-red-500/40 text-red-300 rounded-xl text-xs flex items-center gap-1 shrink-0"
+                  title="Delete selected plan"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Save Current Plan Input */}
             <div className="flex gap-2">
               <input
                 type="text"
-                placeholder="Name current setup (e.g., 150ft Trimix + 1.4 Deco SP)..."
+                placeholder="Name current dive plan to save..."
                 value={favName}
                 onChange={(e) => setFavName(e.target.value)}
-                className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white"
               />
               <button
                 onClick={saveCurrentAsFavorite}
-                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1 shrink-0"
+                className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1 shrink-0"
               >
                 <Plus className="w-3.5 h-3.5" /> Save Plan
               </button>
             </div>
-
-            {favorites.length > 0 && (
-              <div className="flex gap-2 overflow-x-auto pt-1 pb-0.5">
-                {favorites.map((fav) => (
-                  <div
-                    key={fav.id}
-                    className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 shrink-0"
-                  >
-                    <button
-                      onClick={() => loadFavorite(fav)}
-                      className="text-left text-xs font-semibold text-cyan-300 hover:text-white"
-                    >
-                      {fav.name}
-                    </button>
-                    <button
-                      onClick={() => deleteFavorite(fav.id)}
-                      className="text-slate-500 hover:text-red-400 ml-1"
-                      title="Remove favorite"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
 
           {/* 1. PROFILE, SETPOINT SCHEDULE & SAC RATE INPUT CARD */}
@@ -687,8 +1002,9 @@ export default function DecoPlanner() {
               <span className="text-xs font-mono uppercase text-purple-400 font-bold">
                 1. Profile, Setpoint Schedule & Diluent
               </span>
-              <span className="text-[11px] font-mono text-slate-400">
-                Bühlmann ZHL-16C + GF
+              <span className="text-[10px] font-mono text-slate-400">
+                Last Stop: {settings.lastStopDepthFt}ft | Asc:{" "}
+                {settings.ascentRateFtMin}ft/m
               </span>
             </div>
 
@@ -729,12 +1045,11 @@ export default function DecoPlanner() {
               </div>
             </div>
 
-            {/* ASCENT / DECO SETPOINT BOOST SCHEDULE (e.g., 1.2 bottom -> 1.4 at 80ft) */}
+            {/* ASCENT / DECO SETPOINT BOOST SCHEDULE */}
             <div className="bg-slate-950/90 border border-emerald-500/30 rounded-xl p-3 space-y-2.5">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-mono uppercase text-emerald-400 font-bold flex items-center gap-1.5">
                   <TrendingUp className="w-3.5 h-3.5" /> Ascent / Deco PO2 Boost
-                  (Manual or Auto SP Up)
                 </span>
                 <button
                   onClick={() => setUseDecoSpBoost(!useDecoSpBoost)}
@@ -835,7 +1150,8 @@ export default function DecoPlanner() {
             <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-mono uppercase text-cyan-400 flex items-center gap-1 font-bold">
-                  <Wind className="w-3.5 h-3.5" /> OC Bailout Consumption (SAC / RMV)
+                  <Wind className="w-3.5 h-3.5" /> OC Bailout SAC (Includes{" "}
+                  {settings.ocProblemTimeMin}m Problem-Solve @ Bottom)
                 </span>
                 <button
                   onClick={() => setIncludeThirdsReserve(!includeThirdsReserve)}
@@ -845,16 +1161,14 @@ export default function DecoPlanner() {
                       : "bg-slate-900 border-slate-700 text-slate-400"
                   }`}
                 >
-                  {includeThirdsReserve
-                    ? "+1/3 Reserve (×1.5): ON"
-                    : "Reserve: OFF (Raw Vol)"}
+                  {includeThirdsReserve ? "+1/3 Res: ON" : "Raw Vol"}
                 </button>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] font-mono text-slate-400 block mb-1">
-                    WORKING / ASCENT SAC (CUFT/MIN)
+                    WORK / ASC SAC (CUFT/MIN)
                   </label>
                   <input
                     type="number"
@@ -893,7 +1207,7 @@ export default function DecoPlanner() {
                   {dilEval.flushPO2}
                 </span>
                 <span className="text-[9px] text-slate-500 block">
-                  Max {dilEval.maxFlushDepthFt}ft
+                  Ideal ≤{dilEval.idealMaxDilO2Pct}%
                 </span>
               </div>
 
@@ -945,16 +1259,61 @@ export default function DecoPlanner() {
             </div>
           </div>
 
-          {/* 2. OFFBOARD BAILOUT & PLUMB-IN ASCENT DILUENT FLEET */}
+          {/* 2. OFFBOARD BAILOUT, TANK LOCKER & PLUMB-IN FLEET */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-mono uppercase text-cyan-400 font-bold">
                 2. Bailout & Plumb-In Ascent Tanks
               </span>
-              <span className="text-[10px] font-mono text-slate-400">
-                Tap any tank to edit
-              </span>
+              <button
+                onClick={() => setShowTankLocker(!showTankLocker)}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold border flex items-center gap-1 transition-all ${
+                  showTankLocker
+                    ? "bg-amber-500 text-slate-950 border-amber-400"
+                    : "bg-slate-950 text-amber-400 border-amber-500/40 hover:border-amber-400"
+                }`}
+              >
+                <Package className="w-3.5 h-3.5" />
+                Tank Locker ({tankLocker.length})
+              </button>
             </div>
+
+            {/* COLLAPSIBLE TANK LOCKER (FAVORITE TANKS) */}
+            {showTankLocker && (
+              <div className="bg-slate-950 border border-amber-500/40 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono uppercase text-amber-300 font-bold">
+                    Favorite Tank Locker (Tap + to Deploy Into Dive Plan):
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  {tankLocker.map((t) => (
+                    <div
+                      key={t.id}
+                      className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5"
+                    >
+                      <button
+                        onClick={() => addTankFromLocker(t)}
+                        className="text-left flex-1 flex items-center gap-1.5 text-xs font-mono font-bold text-amber-300 hover:text-white"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>{t.name}</span>
+                        <span className="text-[10px] text-slate-400 font-normal">
+                          (SW {t.switchDepthFt}ft)
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => removeTankFromLocker(t.id)}
+                        className="text-slate-500 hover:text-red-400 p-0.5"
+                        title="Remove from locker"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* ONE-CLICK ACCEPT SUGGESTED BAILOUT TANKS */}
             <div className="bg-slate-950 border border-cyan-500/30 rounded-xl p-3 space-y-2">
@@ -979,7 +1338,7 @@ export default function DecoPlanner() {
               </div>
             </div>
 
-            {/* TANK CARDS LIST */}
+            {/* ACTIVE TANK CARDS LIST */}
             <div className="space-y-2.5">
               {gases.map((g) => {
                 const rawCuFt = ocBailoutPlan.gasUsageCuFt[g.name] || 0;
@@ -1059,7 +1418,6 @@ export default function DecoPlanner() {
                       </div>
                     </div>
 
-                    {/* DEDICATED CCR DILUENT PLUMB-IN LINE WHEN ENABLED */}
                     {g.isUsedAsDiluentOnAscent && (
                       <div className="bg-purple-950/30 border border-purple-500/40 rounded-lg px-3 py-2 flex items-center justify-between gap-2 text-xs">
                         <div className="font-mono text-[11px] text-purple-200">
@@ -1088,7 +1446,7 @@ export default function DecoPlanner() {
               })}
             </div>
 
-            {/* CLEARLY LABELED TANK ADD / EDIT FORM */}
+            {/* CLEARLY LABELED TANK ADD / EDIT FORM + SAVE TO LOCKER */}
             <div className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-mono uppercase font-bold text-amber-400">
@@ -1189,7 +1547,7 @@ export default function DecoPlanner() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-1">
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                 <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
                   <input
                     type="checkbox"
@@ -1197,44 +1555,83 @@ export default function DecoPlanner() {
                     onChange={(e) => setFormPlumbIn(e.target.checked)}
                     className="rounded border-slate-700"
                   />
-                  <span>Also plumb into loop as CCR Ascent Diluent</span>
+                  <span>Plumb into CCR Loop on Ascent</span>
                 </label>
 
-                <button
-                  onClick={saveOrAddGas}
-                  className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 shadow"
-                >
-                  {editingGasId ? (
-                    <>
-                      <Check className="w-4 h-4" /> Update Tank
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-4 h-4" /> Add Tank
-                    </>
-                  )}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={saveFormGasToLocker}
+                    className="px-3 py-2 bg-slate-900 hover:bg-slate-800 border border-amber-500/40 text-amber-300 font-bold rounded-xl text-xs flex items-center gap-1"
+                    title="Save this tank to your persistent Tank Locker"
+                  >
+                    <Package className="w-3.5 h-3.5" /> Save to Locker
+                  </button>
+
+                  <button
+                    onClick={saveOrAddGas}
+                    className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 shadow"
+                  >
+                    {editingGasId ? (
+                      <>
+                        <Check className="w-4 h-4" /> Update Tank
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4" /> Add Tank
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* 3. SIDE-BY-SIDE CCR vs. OC BAILOUT SCHEDULE (WITH RUN TIME vs DECO/TTS) */}
+          {/* 3. FULL DIVE SPREADSHEET (CLICK CCR OR OC TO FILTER VIEW) */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-mono uppercase text-emerald-400 font-bold">
-                3. Deco Schedule (Run Time vs. Deco / TTS)
+                3. Full Dive Profile & Deco Schedule
               </span>
-              <span className="text-[10px] font-mono text-slate-400">
-                Bot Time: {bottomTimeMin}m
-              </span>
+
+              {/* View Filter Pills */}
+              <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-[10px] font-mono font-bold">
+                <Eye className="w-3 h-3 text-slate-400 ml-1 mr-0.5" />
+                {(["BOTH", "CCR", "OC"] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setTableViewMode(m)}
+                    className={`px-2 py-1 rounded-lg transition-all ${
+                      tableViewMode === m
+                        ? "bg-emerald-500 text-slate-950"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    {m === "BOTH" ? "Both" : m === "CCR" ? "CCR Only" : "OC Only"}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* CLEAR RUN TIME vs DECO / TTS SUMMARY CARDS */}
+            {/* CLICKABLE SUMMARY CARDS (TAP CCR OR OC CARD TO SOLO THAT VIEW) */}
             <div className="grid grid-cols-2 gap-2.5 font-mono">
-              <div className="bg-slate-950 border border-emerald-500/30 rounded-xl p-3">
-                <span className="text-[10px] text-emerald-400 font-bold block uppercase">
-                  Closed-Circuit (CCR)
-                </span>
+              <button
+                onClick={() =>
+                  setTableViewMode(tableViewMode === "CCR" ? "BOTH" : "CCR")
+                }
+                className={`text-left rounded-xl p-3 border transition-all ${
+                  tableViewMode === "CCR"
+                    ? "bg-emerald-950/50 border-2 border-emerald-400 ring-1 ring-emerald-400/40"
+                    : "bg-slate-950 border-emerald-500/30 hover:border-emerald-400/60"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-emerald-400 font-bold uppercase">
+                    Closed-Circuit (CCR)
+                  </span>
+                  <span className="text-[9px] text-slate-400">
+                    {tableViewMode === "CCR" ? "Showing CCR" : "Tap to Solo"}
+                  </span>
+                </div>
                 <div className="flex items-baseline justify-between mt-1">
                   <div>
                     <span className="text-[10px] text-slate-400 block">
@@ -1254,15 +1651,29 @@ export default function DecoPlanner() {
                   </div>
                 </div>
                 <span className="text-[10px] text-slate-500 block mt-1">
-                  Stops: {ccrPlan.totalDecoStopMin}m | Ascent:{" "}
+                  Stops: {ccrPlan.totalDecoStopMin}m | Asc:{" "}
                   {ccrPlan.ascentTransitMin}m
                 </span>
-              </div>
+              </button>
 
-              <div className="bg-slate-950 border border-amber-500/30 rounded-xl p-3">
-                <span className="text-[10px] text-amber-400 font-bold block uppercase">
-                  Open-Circuit Bailout
-                </span>
+              <button
+                onClick={() =>
+                  setTableViewMode(tableViewMode === "OC" ? "BOTH" : "OC")
+                }
+                className={`text-left rounded-xl p-3 border transition-all ${
+                  tableViewMode === "OC"
+                    ? "bg-amber-950/50 border-2 border-amber-400 ring-1 ring-amber-400/40"
+                    : "bg-slate-950 border-amber-500/30 hover:border-amber-400/60"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-amber-400 font-bold uppercase">
+                    Open-Circuit Bailout
+                  </span>
+                  <span className="text-[9px] text-slate-400">
+                    {tableViewMode === "OC" ? "Showing OC" : "Tap to Solo"}
+                  </span>
+                </div>
                 <div className="flex items-baseline justify-between mt-1">
                   <div>
                     <span className="text-[10px] text-slate-400 block">
@@ -1282,10 +1693,10 @@ export default function DecoPlanner() {
                   </div>
                 </div>
                 <span className="text-[10px] text-slate-500 block mt-1">
-                  Stops: {ocBailoutPlan.totalDecoStopMin}m | Ascent:{" "}
-                  {ocBailoutPlan.ascentTransitMin}m
+                  +{ocBailoutPlan.ocProblemTimeMin}m Bot Solve | Stops:{" "}
+                  {ocBailoutPlan.totalDecoStopMin}m
                 </span>
-              </div>
+              </button>
             </div>
 
             {/* Active CCR Diluent & Setpoint Schedule Summary Line */}
@@ -1346,27 +1757,190 @@ export default function DecoPlanner() {
               </div>
             </div>
 
-            {ccrPlan.stops.length === 0 && ocBailoutPlan.stops.length === 0 ? (
-              <p className="text-xs font-mono text-emerald-400 bg-slate-950 p-3 rounded-xl border border-slate-800 text-center">
-                No decompression stops required for this profile.
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
+            {/* FULL DIVE SPREADSHEET TABLE (DESCENT -> BOTTOM -> ASCENT -> STOPS) */}
+            <div className="overflow-x-auto">
+              {tableViewMode === "CCR" && (
                 <table className="w-full text-left font-mono text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-slate-800 text-[10px] text-slate-400">
-                      <th className="py-1.5">STOP</th>
-                      <th className="py-1.5">CCR STOP</th>
+                      <th className="py-1.5">PHASE / DEPTH</th>
+                      <th className="py-1.5">TIME</th>
+                      <th className="py-1.5">RUN</th>
+                      <th className="py-1.5 text-emerald-300">SP</th>
+                      <th className="py-1.5 text-purple-300">CCR DILUENT</th>
+                      <th className="py-1.5">LOOP FO2/HE</th>
+                      <th className="py-1.5">CNS%</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {ccrPlan.profileRows.map((r) => (
+                      <tr
+                        key={r.id}
+                        className={
+                          r.phase === "BOTTOM"
+                            ? "bg-purple-950/20"
+                            : r.phase === "ASCENT"
+                            ? "bg-slate-950/60 text-slate-400"
+                            : ""
+                        }
+                      >
+                        <td className="py-1.5 font-bold text-white">
+                          {r.depthLabel}
+                        </td>
+                        <td className="py-1.5 text-emerald-400 font-bold">
+                          {r.timeMin}m
+                        </td>
+                        <td className="py-1.5 text-slate-300">
+                          {r.runTimeMin}m
+                        </td>
+                        <td className="py-1.5 text-emerald-300">
+                          {r.activeSp}
+                        </td>
+                        <td className="py-1.5 text-purple-300 font-semibold">
+                          {r.activeGasName}
+                        </td>
+                        <td className="py-1.5 text-slate-400">
+                          {r.loopFO2}/{r.loopFHe}
+                        </td>
+                        <td className="py-1.5 text-slate-400">{r.cns}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              {tableViewMode === "OC" && (
+                <table className="w-full text-left font-mono text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-[10px] text-slate-400">
+                      <th className="py-1.5">PHASE / DEPTH</th>
+                      <th className="py-1.5 text-amber-400">TIME</th>
+                      <th className="py-1.5 text-amber-300">RUN</th>
+                      <th className="py-1.5 text-cyan-300">ACTIVE GAS</th>
+                      <th className="py-1.5">PO2 (ATA)</th>
+                      <th className="py-1.5">CNS%</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {ocBailoutPlan.profileRows.map((r) => (
+                      <tr
+                        key={r.id}
+                        className={
+                          r.phase === "PROBLEM"
+                            ? "bg-amber-950/30"
+                            : r.phase === "ASCENT"
+                            ? "bg-slate-950/60 text-slate-400"
+                            : ""
+                        }
+                      >
+                        <td className="py-1.5 font-bold text-white">
+                          {r.depthLabel}
+                        </td>
+                        <td className="py-1.5 text-amber-400 font-bold">
+                          {r.timeMin}m
+                        </td>
+                        <td className="py-1.5 text-slate-300">
+                          {r.runTimeMin}m
+                        </td>
+                        <td className="py-1.5 text-cyan-300 font-semibold">
+                          {r.activeGasName}
+                        </td>
+                        <td className="py-1.5 text-slate-300">{r.activeSp}</td>
+                        <td className="py-1.5 text-slate-400">{r.cns}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              {tableViewMode === "BOTH" && (
+                <table className="w-full text-left font-mono text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-[10px] text-slate-400">
+                      <th className="py-1.5">PHASE / DEPTH</th>
+                      <th className="py-1.5 text-emerald-400">CCR MIN</th>
                       <th className="py-1.5">CCR RUN</th>
                       <th className="py-1.5 text-emerald-300">SP</th>
                       <th className="py-1.5 text-purple-300">CCR DIL</th>
-                      <th className="py-1.5">LOOP</th>
-                      <th className="py-1.5 text-amber-400">OC STOP</th>
-                      <th className="py-1.5 text-amber-400">OC RUN</th>
+                      <th className="py-1.5 text-amber-400">OC MIN</th>
+                      <th className="py-1.5 text-amber-300">OC RUN</th>
                       <th className="py-1.5 text-cyan-300">OC GAS</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
+                    {/* Fixed Pre-Ascent Rows: Descent, Bottom, and OC Problem Solving */}
+                    <tr>
+                      <td className="py-1.5 font-bold text-slate-300">
+                        0 → {bottomDepthFt} ft (Desc)
+                      </td>
+                      <td className="py-1.5 text-emerald-400">
+                        {ccrPlan.profileRows[0]?.timeMin}m
+                      </td>
+                      <td className="py-1.5 text-slate-300">
+                        {ccrPlan.profileRows[0]?.runTimeMin}m
+                      </td>
+                      <td className="py-1.5 text-emerald-300">{setpoint}</td>
+                      <td className="py-1.5 text-purple-300">
+                        Dil {dilO2}/{dilHe}
+                      </td>
+                      <td className="py-1.5 text-amber-300">
+                        {ocBailoutPlan.profileRows[0]?.timeMin}m
+                      </td>
+                      <td className="py-1.5 text-amber-200/80">
+                        {ocBailoutPlan.profileRows[0]?.runTimeMin}m
+                      </td>
+                      <td className="py-1.5 text-slate-400">On CCR Loop</td>
+                    </tr>
+
+                    <tr className="bg-purple-950/20">
+                      <td className="py-1.5 font-bold text-white">
+                        {bottomDepthFt} ft (Bottom)
+                      </td>
+                      <td className="py-1.5 text-emerald-400 font-bold">
+                        {ccrPlan.profileRows[1]?.timeMin}m
+                      </td>
+                      <td className="py-1.5 text-slate-300">
+                        {ccrPlan.profileRows[1]?.runTimeMin}m
+                      </td>
+                      <td className="py-1.5 text-emerald-300">{setpoint}</td>
+                      <td className="py-1.5 text-purple-300">
+                        Dil {dilO2}/{dilHe}
+                      </td>
+                      <td className="py-1.5 text-amber-300 font-bold">
+                        {ocBailoutPlan.profileRows[1]?.timeMin}m
+                      </td>
+                      <td className="py-1.5 text-amber-200/80">
+                        {ocBailoutPlan.profileRows[1]?.runTimeMin}m
+                      </td>
+                      <td className="py-1.5 text-slate-400">On CCR Loop</td>
+                    </tr>
+
+                    {settings.ocProblemTimeMin > 0 && (
+                      <tr className="bg-amber-950/25">
+                        <td className="py-1.5 font-bold text-amber-300">
+                          {bottomDepthFt} ft (BO Solve)
+                        </td>
+                        <td className="py-1.5 text-slate-500">-</td>
+                        <td className="py-1.5 text-slate-500">-</td>
+                        <td className="py-1.5 text-slate-500">-</td>
+                        <td className="py-1.5 text-slate-500">Ascending</td>
+                        <td className="py-1.5 text-amber-400 font-bold">
+                          +{settings.ocProblemTimeMin}m
+                        </td>
+                        <td className="py-1.5 text-amber-200">
+                          {bottomTimeMin + settings.ocProblemTimeMin}m
+                        </td>
+                        <td className="py-1.5 text-cyan-300 font-bold">
+                          {
+                            ocBailoutPlan.profileRows.find(
+                              (r) => r.phase === "PROBLEM"
+                            )?.activeGasName
+                          }
+                        </td>
+                      </tr>
+                    )}
+
+                    {/* All Deco Stops from First Stop up to Last Stop (10ft/15ft/20ft) */}
                     {Array.from(
                       new Set([
                         ...ccrPlan.stops.map((s) => s.depthFt),
@@ -1384,7 +1958,7 @@ export default function DecoPlanner() {
                         return (
                           <tr key={depth}>
                             <td className="py-1.5 font-bold text-white">
-                              {depth} ft
+                              {depth} ft Stop
                             </td>
                             <td className="py-1.5 text-emerald-400 font-bold">
                               {ccrStop ? `${ccrStop.timeMin}m` : "-"}
@@ -1397,11 +1971,6 @@ export default function DecoPlanner() {
                             </td>
                             <td className="py-1.5 text-purple-300 font-semibold">
                               {ccrStop ? ccrStop.activeGasName : "-"}
-                            </td>
-                            <td className="py-1.5 text-slate-400">
-                              {ccrStop
-                                ? `${ccrStop.loopFO2}/${ccrStop.loopFHe}`
-                                : "-"}
                             </td>
                             <td className="py-1.5 text-amber-300 font-bold">
                               {boStop ? `${boStop.timeMin}m` : "-"}
@@ -1417,8 +1986,8 @@ export default function DecoPlanner() {
                       })}
                   </tbody>
                 </table>
-              </div>
-            )}
+              )}
+            </div>
 
             <div className="flex justify-between text-[11px] font-mono text-slate-400 pt-2 border-t border-slate-800">
               <span>
@@ -1430,9 +1999,7 @@ export default function DecoPlanner() {
         </>
       )}
 
-      {/* ==========================================
-          SUBTAB 2: SUBSURFACE PLAN VS. ACTUAL DEBRIEF
-         ========================================== */}
+      {/* SUBTAB 2: SUBSURFACE PLAN VS. ACTUAL DEBRIEF */}
       {subTab === "compare" && (
         <div className="space-y-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
@@ -1511,9 +2078,6 @@ export default function DecoPlanner() {
               </div>
 
               <div className="space-y-2 pt-2">
-                <span className="text-[11px] font-mono uppercase text-slate-400 block">
-                  Automated Telemetry Debrief & Suggestions:
-                </span>
                 {coachingMetrics.suggestions.map((sug, i) => (
                   <div
                     key={i}
