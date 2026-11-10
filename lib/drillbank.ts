@@ -1,6 +1,10 @@
-// lib/drillBank.ts — PART 1 (Scenarios 1 to 25)
+// lib/drillbank.ts — PART 1 (Scenarios 1 to 30: P2 Hardware & Mod 1 Air/EANx)
 
-export type DrillLevel = "P2 Hardware" | "Tec 40 CCR" | "Tec 60 CCR" | "Tec 100 CCR";
+export type DrillLevel =
+  | "P2 Hardware"
+  | "Mod 1: Air/EANx"
+  | "Mod 2: Normoxic"
+  | "Mod 3: Hypoxic";
 
 export interface DrillScenario {
   id: string;
@@ -22,7 +26,7 @@ export interface DrillScenario {
 
 export const DRILL_SCENARIOS: DrillScenario[] = [
   // =====================================================
-  // P2 HARDWARE SPECIFIC SCENARIOS (1 - 12)
+  // P2 HARDWARE SPECIFIC SCENARIOS (1 - 15)
   // =====================================================
   {
     id: "p2_01",
@@ -35,22 +39,35 @@ export const DRILL_SCENARIOS: DrillScenario[] = [
     cells: ["1.68", "1.71", "1.69"],
     hudState: "TOP RED BLINKING (7x) + RED BUDDY LIGHT PULSING",
     scenarioText:
-      "At 120ft on 1.3 SP, you hear continuous oxygen injection and watch loop PPO2 climb past 1.68 across all three cells. Because the Prism 2 does not have an internal solenoid isolator slider, how do you stabilize the loop and diagnose whether the Solenoid or Manual O2 Add Block failed?",
+      "At 120ft on 1.3 SP, you hear continuous oxygen injection and see loop PPO2 climb past 1.68 across all cells. Since the Prism 2 has no internal solenoid shutoff slider, how do you stabilize and isolate whether the Solenoid or Manual O2 Block failed?",
     options: [
       {
-        label: "A. Lower electronic setpoint to 0.7 and exhale through your nose until PPO2 drops.",
-        isCorrect: false,
-        feedback: "Lowering setpoint will not stop a mechanically stuck-open solenoid or leaking MAV, and waiting for metabolism risks CNS convulsions.",
-      },
-      {
-        label: "B. Bail out to BOV/OC, shut the right-hand O2 tank valve, diluent flush, disconnect the QD hose at the Manual O2 Addition Block, and briefly crack the O2 tank valve 1/2 turn while watching PPO2.",
+        label:
+          "Switch to BOV open-circuit, shut the right-hand O2 valve, flush the loop with diluent, unplug the Manual O2 Block QD, and crack the O2 valve 1/2 turn while watching PPO2.",
         isCorrect: true,
-        feedback: "Correct. Unplugging the QD feed to the Manual O2 Block and cracking the O2 tank valve 1/2 turn isolates the fault: if PPO2 rises, the solenoid failed open (feather tank valve); if steady, the MAV leaked (leave QD unplugged and let solenoid run the ascent).",
+        feedback:
+          "Correct. Unplugging the Manual O2 Block QD isolates the two O2 pathways: cracking the tank valve 1/2 turn shows if the solenoid failed open (PPO2 rises) or if the manual block leaked (PPO2 holds steady).",
       },
       {
-        label: "C. Unplug the DiveCAN handset cable so the SOLO board powers down.",
+        label:
+          "Drop your handset setpoint to 0.19 immediately, flush continuously with diluent while staying on the loop, disconnect the left-side ADV hose, and monitor whether PPO2 stabilizes below 1.40.",
         isCorrect: false,
-        feedback: "While submerged, the SOLO board continues operating independently even if the handset is unplugged.",
+        feedback:
+          "Incorrect. Changing electronic setpoint to 0.19 cannot stop a mechanically fouled solenoid or leaking manual O2 valve, and staying on a 1.7+ ata loop risks immediate CNS convulsions.",
+      },
+      {
+        label:
+          "Switch to BOV open-circuit, leave the Manual O2 QD connected to bleed line pressure, unthread the 5-pin DiveCAN handset connector to de-energize the SOLO coil, and ascend.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Never unthread wet-mate or DiveCAN sleeves expecting to stop a mechanical seat leak, and while submerged the SOLO board operates independently of the handset anyway.",
+      },
+      {
+        label:
+          "Stay on closed-circuit while venting gas out your nose, close the right-hand O2 tank valve, press the manual O2 button to drain intermediate pressure, and run semiclosed on onboard diluent.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. You should get off a dangerously hyperoxic loop onto known gas first, and unplugging the MAV QD lets you retain full automatic solenoid control if only the manual button leaked.",
       },
     ],
   },
@@ -58,29 +75,42 @@ export const DRILL_SCENARIOS: DrillScenario[] = [
     id: "p2_02",
     level: "P2 Hardware",
     category: "Electronics / Cells",
-    title: "Cell Divergence & VOTING FAILED on Deco",
+    title: "Cell Divergence & VOTING FAILED on Ascent",
     depthFt: 100,
     setpoint: 1.3,
     diluent: "16/35",
     cells: ["0.45", "1.05", "1.52"],
-    hudState: "MIXED BLINKS ACROSS COLUMNS",
+    hudState: "MIXED BLINKS ACROSS ALL THREE COLUMNS",
     scenarioText:
-      "Ascending to your 100ft stop, your handset center row turns yellow and alternates between [.45 / 1.05 / 1.52] and 'VOTING FAILED'. How does the P2 controller behave during VOTING FAILED, and what is your immediate action?",
+      "Ascending toward 100ft, your handset center row turns yellow and alternates between [.45 / 1.05 / 1.52] and 'VOTING FAILED'. How does the P2 controller respond during VOTING FAILED, and what is your immediate diagnostic procedure?",
     options: [
       {
-        label: "A. Solenoid stops firing completely and deco math defaults to the lowest cell (0.45). Check DilPO2, execute a diluent flush to see which cell matches known DilPO2, or bail out to OC.",
+        label:
+          "Automatic solenoid firing stops and decompression math defaults to the lowest cell (0.45); verify safe DilPO2, flush the loop with diluent to identify truthful cells, or bail out.",
         isCorrect: true,
-        feedback: "Spot on. When no two cells agree within 20%, voting fails: automatic O2 injection stops and deco math uses the lowest cell (down to 0.16). Flushing with known diluent reveals which cell is accurate.",
+        feedback:
+          "Spot on. When no two sensors agree within 20%, the SOLO board halts automatic O2 firing to prevent runaway injection and calculates deco using the lowest sensor down to 0.16 ata.",
       },
       {
-        label: "B. Controller averages all three cells (1.01) and keeps firing the solenoid.",
+        label:
+          "The controller averages all three sensors (1.01 ata) and keeps firing the solenoid conservatively; inject a manual burst of O2 to test whether Cell 1 climbs out of hypoxia.",
         isCorrect: false,
-        feedback: "The P2 only averages cells that pass voting (within 20% of another cell). Once VOTING FAILED appears, the solenoid will not fire.",
+        feedback:
+          "Incorrect. Averaging stops completely when all three cells diverge beyond 20%, and blindly injecting O2 when Cell 3 already reads 1.52 ata risks spiking actual loop PPO2 past 1.6.",
       },
       {
-        label: "C. Enter the Calibrate menu underwater to reset the drifting sensors.",
+        label:
+          "Automatic solenoid firing locks onto the middle sensor (1.05 ata) as a tie-breaker; open the handset menu underwater to recalibrate the sensors against a fresh diluent flush.",
         isCorrect: false,
-        feedback: "The Calibrate menu is locked out whenever the computer is in dive mode underwater.",
+        feedback:
+          "Incorrect. Neither Shearwater nor SOLO uses median tie-breaking during voting failure, and the Calibration menu is completely locked out whenever the unit is submerged in dive mode.",
+      },
+      {
+        label:
+          "The solenoid switches to a fixed timed pulse every 15 seconds and deco math freezes; switch your handset to 0.7 setpoint so Cell 1 and Cell 2 re-align within 20%.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. DiveCAN SOLO controllers never fire blind timed O2 pulses when sensor voting fails, and changing electronic setpoint does not change existing cell millivolt divergence.",
       },
     ],
   },
@@ -88,89 +118,128 @@ export const DRILL_SCENARIOS: DrillScenario[] = [
     id: "p2_03",
     level: "P2 Hardware",
     category: "DiveCAN Architecture",
-    title: "Detached Wrist Display at Surface vs. Depth",
+    title: "Detached Wrist Handset at Surface vs. Submerged",
     depthFt: 0,
     setpoint: 0.7,
     diluent: "21/00",
     cells: ["---", "---", "---"],
     hudState: "3 YELLOW BLINKS (0.7 ATA)",
     scenarioText:
-      "While gearing up on the boat bench before jumping in, a snag pulls the DiveCAN wrist display connector loose (locking sleeve O-rings were left off). Your HUD is still blinking 3 yellow flashes (0.7). Will the SOLO board keep firing the solenoid on the surface?",
+      "While gearing up on the boat bench before entry, a snag pulls the 5-pin DiveCAN handset connector apart because the locking sleeve O-rings were omitted. Your HUD still flashes 3 yellow blinks (0.7). How does the SOLO board behave on the surface?",
     options: [
       {
-        label: "A. Yes, the SOLO board maintains 0.7 setpoint at all times whether on the surface or underwater.",
-        isCorrect: false,
-        feedback: "Per the P2 DiveCAN architecture, independent SOLO solenoid control ONLY functions while submerged in a dive.",
-      },
-      {
-        label: "B. No. Independent SOLO solenoid operation only works while submerged. Disconnection at the surface results in total loss of automatic solenoid control.",
+        label:
+          "Independent SOLO solenoid firing only functions while submerged in dive mode; losing the primary handset at the surface disables all automatic oxygen injection despite active HUD blinks.",
         isCorrect: true,
-        feedback: "Correct. At the surface, losing the wrist handset stops automatic solenoid control completely to prevent continuous surface firing.",
+        feedback:
+          "Correct. To prevent draining cylinders on the bench, independent SOLO setpoint maintenance is strictly active while submerged. Never breathe the loop at the surface with an unplugged handset.",
       },
       {
-        label: "C. The HUD takes over solenoid control at the surface.",
+        label:
+          "The SOLO board maintains the 0.70 ata low setpoint automatically both at the surface and at depth as long as the OBOE monitor bus still powers the LED HUD.",
         isCorrect: false,
-        feedback: "The HUD is a monitor-only device on the OBOE bus and never controls the solenoid.",
+        feedback:
+          "Incorrect. On the surface, detaching the primary handset halts automatic solenoid control completely—even though the OBOE board continues transmitting sensor PPO2 to the HUD.",
+      },
+      {
+        label:
+          "The HUD automatically promotes itself from a monitor device to master bus controller on the surface and fires the solenoid at 0.70 ata until the handset is reconnected.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. The LED HUD sits on the OBOE monitor bus and only sends manual user tap commands to SOLO; it never acts as an automatic PID solenoid controller at the surface.",
+      },
+      {
+        label:
+          "Disconnecting the DiveCAN handset at the surface triggers a fail-safe continuous trickle from the solenoid, requiring you to shut the right-hand oxygen cylinder valve immediately.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. The P2 solenoid is an electrically actuated normally-closed valve—losing handset comms on the surface leaves it closed, creating a surface hypoxia hazard if breathed.",
       },
     ],
   },
   {
     id: "p2_04",
     level: "P2 Hardware",
-    category: "HUD Smither's Code",
-    title: "Primary Handset Blank — Decoding HUD Blink Pattern",
+    category: "HUD Blink Code",
+    title: "Primary Handset Blank — Decoding LED HUD Blink Pattern",
     depthFt: 90,
     setpoint: 1.2,
     diluent: "18/45",
     cells: ["---", "---", "---"],
     hudState: "COL 1: 1 GRN | COL 2: 1 GRN | COL 3: 4 YEL",
     scenarioText:
-      "Your primary handset screen goes dark at 90ft. Looking at your Hollis LED HUD, Column 1 flashes 1 Green blink, Column 2 flashes 1 Green blink, and Column 3 flashes 4 Yellow blinks per cycle. What are your three cells reading?",
+      "Your primary wrist handset floods and goes dark at 90ft. Checking your Hollis LED HUD, Column 1 flashes 1 Green blink, Column 2 flashes 1 Green blink, and Column 3 flashes 4 Yellow blinks per cycle. What are your three O2 sensors reading?",
     options: [
       {
-        label: "A. Cell 1 = 1.1 ata, Cell 2 = 1.1 ata, Cell 3 = 0.6 ata (Cell 3 failing low).",
+        label:
+          "Cell 1 = 1.1 ata, Cell 2 = 1.1 ata, and Cell 3 = 0.6 ata — indicating two healthy sensors tracking together while Cell 3 is failing low or current-limiting.",
         isCorrect: true,
-        feedback: "Exact Smither's Code math! 1.0 ata is the baseline: each Green blink adds +0.1 ata above 1.0 (1 Green = 1.1 ata), and each Yellow blink subtracts -0.1 ata below 1.0 (4 Yellow = 0.6 ata). Two cells agree at 1.1 while Cell 3 reads low.",
+        feedback:
+          "Exact HUD decode. Alternating Green/Yellow marks 1.0 ata; each Green blink adds +0.1 ata above 1.0 (1 Green = 1.1), and each Yellow blink subtracts 0.1 ata below 1.0 (4 Yellow = 0.6).",
       },
       {
-        label: "B. Cell 1 = 1.0 ata, Cell 2 = 1.0 ata, Cell 3 = 1.4 ata.",
+        label:
+          "Cell 1 = 1.0 ata, Cell 2 = 1.0 ata, and Cell 3 = 0.4 ata — indicating the SOLO board has dropped to backup low setpoint while Cell 3 has completely disconnected.",
         isCorrect: false,
-        feedback: "1.0 ata is indicated by alternating Green+Yellow blinks. 1 Green blink is 1.1 ata, and Yellow blinks are below 1.0 ata.",
+        feedback:
+          "Incorrect. 1.0 ata is displayed as alternating Green+Yellow flashes, not a single Green flash, and 0.4 ata below 1.0 would produce 6 rapid Red blinks at the bottom of Column 3.",
       },
       {
-        label: "C. All three cells are above 1.6 ata.",
+        label:
+          "Cell 1 = 1.2 ata, Cell 2 = 1.2 ata, and Cell 3 = 0.8 ata — because Green blinks count upward in 0.2 ata increments while Yellow blinks count downward in 0.05 ata steps.",
         isCorrect: false,
-        feedback: "PPO2 above 1.6 ata flashes Red at the top of the column (7+ blinks).",
+        feedback:
+          "Incorrect. Every blink on the Hollis LED HUD represents a uniform 0.1 ata step away from the 1.0 ata centerline (1 Green = 1.1 ata; 4 Yellow = 0.6 ata).",
+      },
+      {
+        label:
+          "Cell 1 = 0.9 ata, Cell 2 = 0.9 ata, and Cell 3 = 1.4 ata — indicating two sensors reading slightly below 1.0 ata while Cell 3 is spiking toward hyperoxia.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. You reversed the color scheme: Green blinks always indicate PPO2 above 1.0 ata (1.1 to 1.6), while Yellow blinks indicate PPO2 below 1.0 ata (0.9 down to 0.5).",
       },
     ],
   },
   {
     id: "p2_05",
     level: "P2 Hardware",
-    category: "HUD Emergency Commands",
-    title: "Forcing Solenoid Boost via HUD Wet Contacts",
+    category: "HUD Wet-Contact Commands",
+    title: "Commanding Manual Solenoid O2 Boost via LED HUD",
     depthFt: 80,
     setpoint: 0.7,
     diluent: "21/00",
     cells: ["0.68", "0.69", "0.68"],
     hudState: "3 YELLOW BLINKS ACROSS ALL COLUMNS",
     scenarioText:
-      "Your primary wrist controller floods and dies at 80ft, and the SOLO board has defaulted to maintaining the 0.7 ata low setpoint. While aborting the dive on the loop, how can you command the solenoid to inject a 2.5-second burst of O2 using only the LED HUD?",
+      "After losing your primary wrist controller at 80ft, your rig is holding the 0.70 ata fallback setpoint. Using only the wet-contact pins on your Hollis LED HUD, how do you command a 2.5-second solenoid O2 injection versus switching setpoint to 1.2?",
     options: [
       {
-        label: "A. Double-tap the HUD wet contacts once to highlight Column 1 (Inject O2), then press and hold the wet contacts for 3 seconds.",
+        label:
+          "Double-tap the wet contacts once to highlight Column 1 and hold 3 seconds for a 2.5s O2 shot, or double-tap twice to Column 2 and hold 3 seconds for 1.2 SP.",
         isCorrect: true,
-        feedback: "Correct! In the P2 HUD command menu, 1 double-tap selects Column 1 (Inject O2). Holding the wet contacts for 3 seconds commands the SOLO board to fire the solenoid for 2.5 seconds.",
+        feedback:
+          "Spot on. Saying 'tap-tap' (~1s) steps across HUD command columns: Column 1 fires a 2.5-second solenoid O2 burst, and Column 2 toggles active SOLO setpoint between 0.7 and 1.2.",
       },
       {
-        label: "B. Double-tap the HUD wet contacts 3 times to Column 3 and hold for 3 seconds.",
+        label:
+          "Bridge the wet contacts continuously for 5 seconds to fire a 2.5s O2 burst, or double-tap three times to Column 3 and hold 3 seconds to engage the 1.2 setpoint.",
         isCorrect: false,
-        feedback: "Column 3 is 'Calibrate' (surface only)—never trigger calibration underwater.",
+        feedback:
+          "Incorrect. Bridging for 5 seconds powers the HUD on at startup, and Column 3 is surface Calibration (which must never be attempted underwater).",
       },
       {
-        label: "C. Bridge the HUD wet contacts continuously for 30 seconds to switch setpoints.",
+        label:
+          "Single-tap the wet contacts rapidly four times to pulse the solenoid for 2.5 seconds, or hold the wet contacts for 10 full seconds to step SOLO up to 1.2 SP.",
         isCorrect: false,
-        feedback: "Column 2 (Switch SP to 1.2) requires 2 double-taps followed by a 3-second hold.",
+        feedback:
+          "Incorrect. Single taps or 10-second holds are ignored to prevent false triggers in saltwater; all HUD commands require paced double-taps followed by a 3-second confirmation hold.",
+      },
+      {
+        label:
+          "The LED HUD is strictly a passive optical monitor on the OBOE board and has zero electrical ability to fire the solenoid or alter SOLO setpoints underwater.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Unlike basic analog HUDs, the DiveCAN Hollis LED HUD includes wet-contact command capability allowing emergency O2 injection (Col 1) and 0.7/1.2 SP switching (Col 2).",
       },
     ],
   },
@@ -178,29 +247,42 @@ export const DRILL_SCENARIOS: DrillScenario[] = [
     id: "p2_06",
     level: "P2 Hardware",
     category: "Head & Scrubber Assembly",
-    title: "Extreme Exhalation Resistance on First Breath",
+    title: "Total Exhalation Lock-Up Upon Entering the Water",
     depthFt: 15,
     setpoint: 0.7,
     diluent: "21/00",
     cells: ["0.72", "0.71", "0.72"],
     hudState: "3 YELLOW BLINKS",
     scenarioText:
-      "During a hasty repack between dives, a diver skips the 5-minute seated pre-breath and jumps in. At 15ft, they can inhale from the loop (triggering the ADV), but when they try to exhale, the exhalation hose locks up solid and gas vents out their mask skirt. What assembly error occurred?",
+      "A diver rushes a turnaround repack, skips the 5-minute pre-breath, and splashes in. At 15ft they can inhale from the loop (triggering the ADV), but when exhaling, the loop locks solid and gas blows out their mask skirt. What assembly fault occurred?",
     options: [
       {
-        label: "A. The radial scrubber basket was installed upside down in the bucket, sealing its solid flat bottom plate against the red CO2 seal in the head.",
+        label:
+          "The radial scrubber basket was loaded upside down in the bucket, pressing its solid flat bottom plate tight against the red silicone CO2 seal and blocking the center bore.",
         isCorrect: true,
-        feedback: "Spot on. Installing the P2 scrubber basket upside down blocks the central gas bore against the head plate, completely obstructing gas flow through the canister.",
+        feedback:
+          "Correct. Inserting the P2 radial basket upside down seals its solid bottom end-cap directly over the head's central gas port, completely blocking exhalation flow through the canister.",
       },
       {
-        label: "B. The red CO2 seal was left on the bench.",
+        label:
+          "The red silicone CO2 seal was accidentally omitted from the head plate channel during assembly, allowing exhaled gas to pressurize the sensor chamber and jam the check valve.",
         isCorrect: false,
-        feedback: "Omitting the red CO2 seal causes 100% scrubber bypass (zero resistance, fatal CO2 buildup), not a physical flow blockage.",
+        feedback:
+          "Incorrect. Omitting the red CO2 seal causes zero breathing resistance and 100% scrubber bypass (silent, rapid hypercapnia)—it never blocks gas flow.",
       },
       {
-        label: "C. The O2 cylinder valve is closed.",
+        label:
+          "Both DSV directional mushroom valves were installed backwards during post-dive reassembly, allowing inhalation from the right hose while locking off exhalation on the left.",
         isCorrect: false,
-        feedback: "A closed O2 valve does not block exhalation into the counterlung.",
+        feedback:
+          "Incorrect. If both DSV mushroom valves were reversed, loop flow would simply run backwards (right-to-left) with normal resistance rather than locking exhalation solid.",
+      },
+      {
+        label:
+          "The counterlung over-pressure relief valve (OPV) was rotated fully clockwise prior to the positive pressure test and left capped, trapping exhaled gas inside the bladder.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Even with the OPV dialed fully clockwise for diving, exhaled gas circulates freely through the scrubber into the inhalation counterlung unless the canister path is obstructed.",
       },
     ],
   },
@@ -208,59 +290,85 @@ export const DRILL_SCENARIOS: DrillScenario[] = [
     id: "p2_07",
     level: "P2 Hardware",
     category: "Solenoid Power",
-    title: "EXT V Drops to 6.6V During Deep Ascent",
+    title: "Dynamic EXT V Sag Below 7.0V During Deep Ascent",
     depthFt: 110,
     setpoint: 1.3,
     diluent: "16/35",
     cells: ["1.12", "1.14", "1.13"],
     hudState: "YELLOW BLINKS + LOW EXT BATTERY ALERT",
     scenarioText:
-      "As you begin ascending from 130ft to 110ft, the solenoid has to fire frequently to keep up with falling ambient pressure. Your handset flashes a Low External Battery warning (`EXT V = 6.6V`) and PPO2 lags at 1.12. What is happening and how should you ascend?",
+      "While ascending from 140ft through 110ft, solenoid duty cycle increases to offset falling ambient pressure. Your handset triggers a Low External Battery alert (EXT V = 6.6V) and loop PPO2 lags down at 1.12. How should you manage the ascent?",
     options: [
       {
-        label: "A. The dual 9V solenoid batteries in the head are sagging below the 7.0V minimum under load and may soon fail to lift the solenoid plunger. Assist and maintain setpoint manually with small bursts of the Manual O2 Addition Valve while ascending slowly.",
+        label:
+          "Expect imminent solenoid failure as the dual 9V head batteries sag below 7.0V; maintain setpoint manually using short Manual O2 Addition bursts while ascending at normal speed.",
         isCorrect: true,
-        feedback: "Correct. Below 7.0V dynamic voltage, the 6V solenoid coil cannot reliably open against 145 psi intermediate pressure. Transition to manual O2 control (vent first, then add small O2 bursts) and abort.",
+        feedback:
+          "Correct. Below the 7.0V dynamic threshold, the solenoid coil may lack magnetic pull to lift the plunger against 145 psi IP. Transition smoothly to manual O2 addition and abort.",
       },
       {
-        label: "B. Ascend at 60 ft/min so you spend less time in the water before the battery dies.",
+        label:
+          "Double your ascent rate to 60 ft/min up to your first stop so you clear deep water before the 9V solenoid batteries drop below their 5.0V hardware cutoff.",
         isCorrect: false,
-        feedback: "Ascending fast causes PPO2 to plummet even faster (hypoxia risk) and violates decompression ceilings.",
+        feedback:
+          "Dangerous! Ascending rapidly causes ambient pressure (and loop PPO2) to plummet twice as fast while violating decompression ceilings and risking acute ascent hypoxia.",
       },
       {
-        label: "C. Ignore it—the handset's internal 3.6V SAFT battery automatically powers the solenoid if EXT V dies.",
+        label:
+          "Switch the handset to 0.70 setpoint to reduce solenoid duty cycle until reaching 30ft, knowing the handset's internal 3.6V lithium battery will take over coil power if EXT V dies.",
         isCorrect: false,
-        feedback: "False! The handset battery (`INT V`) only powers the wrist display and DiveCAN logic; it cannot fire the solenoid.",
+        feedback:
+          "Incorrect. The wrist handset battery (INT V) strictly powers DiveCAN logic and display optics—it is electrically isolated from driving the 6V head solenoid coil.",
+      },
+      {
+        label:
+          "Immediately bail out onto open-circuit backgas for the entire ascent because low EXT V simultaneously shuts down all three O2 sensor amplifiers and decompression tissue tracking.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Sensor amplification and decompression tracking are powered independently by the handset/OBOE lithium cells—with intact scrubbers and sensors, manual O2 loop control works cleanly.",
       },
     ],
   },
   {
     id: "p2_08",
     level: "P2 Hardware",
-    category: "Solenoid Restrictor",
-    title: "Solenoid Clicking Audibly But PPO2 Keeps Falling",
+    category: "Solenoid Plumbing",
+    title: "Solenoid Clicking Audibly While Loop PPO2 Continues Falling",
     depthFt: 85,
     setpoint: 1.2,
     diluent: "21/00",
     cells: ["0.62", "0.61", "0.63"],
     hudState: "4 YELLOW BLINKS",
     scenarioText:
-      "At 85ft, your O2 SPG reads 2,200 psi, your manual O2 addition button flows briskly when pressed, and you can clearly hear the solenoid clicking every few seconds—yet loop PPO2 steadily drops unless you press the manual O2 button. What P2 component is blocked?",
+      "At 85ft, your O2 SPG shows 2,200 psi, pressing your Manual O2 Addition button injects O2 briskly, and you hear the head solenoid clicking every few seconds—yet loop PPO2 drops steadily unless you add O2 manually. Which P2 part is obstructed?",
     options: [
       {
-        label: "A. The 0.0020-inch sintered bronze inline flow restrictor inside the solenoid LP hose fitting at the O2 1st stage is clogged.",
+        label:
+          "The 0.0020-inch sintered bronze inline flow restrictor inside the solenoid LP hose fitting on the O2 first stage is clogged; fly the loop manually via MAV and abort.",
         isCorrect: true,
-        feedback: "Exact P2 diagnostic! The manual O2 valve uses a standard LP port, while the solenoid feed hose passes through a microscopic 0.0020\" restrictor and filter screen that can clog if moisture/verdigris enters the 1st stage. Maintain SP manually with the MAV and abort.",
+        feedback:
+          "Exact P2 diagnosis. The manual O2 block uses a standard LP port, whereas the solenoid hose relies on a tiny 0.0020\" restrictor orifice at the 1st stage that clogs easily if moisture enters.",
       },
       {
-        label: "B. All three O2 cells have failed simultaneously.",
+        label:
+          "The high-pressure sintered inlet filter inside the DIN wheel of the oxygen first stage is blocked; switch to open-circuit bailout immediately before the MAV starves too.",
         isCorrect: false,
-        feedback: "When you press the manual O2 button, the cells respond immediately—proving the sensors are working.",
+        feedback:
+          "Incorrect. If the 1st stage DIN inlet filter were blocked, the SPG or MAV flow would sag when pressed—brisk MAV delivery proves 1st stage intermediate pressure is healthy.",
       },
       {
-        label: "C. The ADV is stuck closed.",
+        label:
+          "All three galvanic O2 sensors have become coated with condensation simultaneously and are under-reporting actual loop PPO2; perform an immediate pure O2 flush to dry them.",
         isCorrect: false,
-        feedback: "A stuck-closed ADV prevents diluent addition on descent, not O2 maintenance at constant depth.",
+        feedback:
+          "Incorrect. The sensors respond immediately whenever you press the manual O2 button, proving the cells are active and that no gas is passing through the clicking solenoid.",
+      },
+      {
+        label:
+          "The internal stainless steel battery cap over-pressure relief valve on the head has popped open, venting every solenoid O2 pulse directly into the surrounding water.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. A popped head relief valve produces an unmistakable stream of bubbles behind your neck whenever the solenoid fires or when positive loop pressure builds.",
       },
     ],
   },
@@ -268,29 +376,42 @@ export const DRILL_SCENARIOS: DrillScenario[] = [
     id: "p2_09",
     level: "P2 Hardware",
     category: "Loop Hardware",
-    title: "White Reverse-Thread Inhalation Hose Nut",
-    depthFt: 40,
-    setpoint: 1.2,
+    title: "Leaking White Inhalation Hose Nut During Bubble Check",
+    depthFt: 20,
+    setpoint: 0.7,
     diluent: "21/00",
-    cells: ["1.18", "1.19", "1.18"],
-    hudState: "2 GREEN BLINKS",
+    cells: ["0.72", "0.73", "0.72"],
+    hudState: "3 YELLOW BLINKS",
     scenarioText:
-      "During your 20ft bubble check, your teammate points to a steady stream of bubbles escaping where the inhalation breathing hose attaches to the head port (marked with a white bar). You reach back to snug the white plastic hose nut down. Which way do you turn it?",
+      "During your 20ft descent bubble check, your teammate points out bubbles escaping where the left inhalation hose nut (white Delrin nut over the white head stripe) meets the electronics head. Reaching back to snug it down, which direction do you rotate it?",
     options: [
       {
-        label: "A. Counter-clockwise (left-hand / reverse thread) to tighten the white inhalation nut.",
+        label:
+          "Turn the white left-hand inhalation nut counter-clockwise (looking down onto the port) because Hollis uses a reverse left-hand thread to prevent cross-connecting loop hoses.",
         isCorrect: true,
-        feedback: "Correct! On the Hollis Prism 2, the white inhalation nut and head port have a reverse (counter-clockwise) thread so the inhalation and exhalation hoses can never be cross-connected. Turning it clockwise unscrews it!",
+        feedback:
+          "Spot on. On the P2 head, the black exhalation nut uses a standard right-hand thread, while the white inhalation nut is reverse-threaded (counter-clockwise to tighten, clockwise to loosen).",
       },
       {
-        label: "B. Clockwise (standard righty-tighty) with as much force as possible.",
+        label:
+          "Turn the white left-hand inhalation nut clockwise (standard right-hand thread) until it bottoms against the stainless reinforcement ring, matching the black exhalation nut.",
         isCorrect: false,
-        feedback: "Turning the white nut clockwise loosens it and can flood the head!",
+        feedback:
+          "Critical trap! Turning the white P2 inhalation nut clockwise unscrews it from the head port, risking a sudden loop flood right behind your neck.",
       },
       {
-        label: "C. Pull the bayonet pin and rotate 90 degrees.",
+        label:
+          "Push the white Delrin collar straight down and rotate 90 degrees clockwise to lock the quarter-turn bayonet pins, then tug-test the corrugated breathing hose.",
         isCorrect: false,
-        feedback: "The P2 head uses threaded Delrin nuts over stainless steel reinforcement rings, not quarter-turn bayonets.",
+        feedback:
+          "Incorrect. The Prism 2 head uses fully threaded Delrin compression nuts over O-ring spigots, not quarter-turn bayonet collars.",
+      },
+      {
+        label:
+          "Do not touch the white nut underwater because it is retained by a set-screw; abort to the surface, drain the loop, and replace the torn flat rubber washer inside.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. There is no locking set-screw or flat washer—it seals via dual radial O-rings and can be gently snugged counter-clockwise if left slightly loose.",
       },
     ],
   },
@@ -298,1390 +419,2203 @@ export const DRILL_SCENARIOS: DrillScenario[] = [
     id: "p2_10",
     level: "P2 Hardware",
     category: "Water Management",
-    title: "Water Gurgling in Exhalation Hose vs. Inhalation Hose",
+    title: "Draining Accumulated Water from Front-Mounted Counterlungs",
     depthFt: 75,
     setpoint: 1.2,
     diluent: "21/00",
     cells: ["1.20", "1.21", "1.19"],
     hudState: "2 GREEN BLINKS",
     scenarioText:
-      "Ninety minutes into a dive on a P2 configured with Front-Mounted Counterlungs (FMCLs), you hear noticeable gurgling in your corrugated hoses. How does the P2 trap water, and how can you expel accumulated water from the FMCL underwater?",
+      "Midway through a dive on a P2 rigged with Front-Mounted Counterlungs (FMCL), you hear heavy gurgling in your right exhalation hose after clearing your mask. How do you route and expel that water underwater without wetting the scrubber?",
     options: [
       {
-        label: "A. Lift the breathing hoses upright to drain water down into the exhalation counterlung, assume a vertical position, unscrew the bottom drain locking collar on the exhalation lung, and press the manual diluent valve (or exhale) while pulling the drain nipple outward.",
+        label:
+          "Lift the corrugated hoses so water runs into the right exhalation counterlung, go vertical, unlock the bottom drain collar counter-clockwise, and pull the drain nipple while adding diluent.",
         isCorrect: true,
-        feedback: "Spot on. The exhalation counterlung acts as the P2's water trap before gas enters the head. Unscrewing the FMCL drain locking collar and pulling the drain nipple while pressurizing the loop purges trapped water.",
+        feedback:
+          "Correct. The right exhalation counterlung serves as the water trap upstream of the head; unlocking its bottom collar and pulling the nipple under slight positive loop pressure purges water cleanly.",
       },
       {
-        label: "B. Roll upside down (head-down) and shake the canister so water runs into the scrubber.",
+        label:
+          "Pitch head-down at a 45-degree angle, rotate the right shoulder OPV fully counter-clockwise, and exhale forcefully through your mouth to blow water out the shoulder dump.",
         isCorrect: false,
-        feedback: "Never invert yourself to clear water! Allowing water to bypass the counterlung trap and enter the soda lime scrubber degrades the bed and risks a caustic cocktail.",
+        feedback:
+          "Never pitch head-down with water in the loop! Inverting yourself dumps trapped water out of the exhalation lung straight into the electronics head and soda lime canister.",
       },
       {
-        label: "C. Open the DSV underwater above your head and let the water fall out.",
+        label:
+          "Hold your DSV mouthpiece above your forehead to prevent flooding, crack the barrel halfway open, and press the manual oxygen button to fountain the water out.",
         isCorrect: false,
-        feedback: "Opening the DSV above your head vents all loop gas and floods the entire breathing loop.",
+        feedback:
+          "Incorrect. Raising and cracking a mouthpiece above your head causes violent freeflow/venting of all loop gas followed by immediate loop flooding.",
+      },
+      {
+        label:
+          "Leave the bottom drain collars locked to preserve vacuum integrity and inhale slightly deeper to pull the water across the head moisture pads where it will be absorbed.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Canister foam pads only catch minor humidity condensation—drawing liquid water into the head risks sensor shorting and a caustic alkaline cocktail.",
       },
     ],
   },
   {
     id: "p2_11",
     level: "P2 Hardware",
-    category: "BOV / DSV Hardware",
-    title: "Mismatched DSV and BOV Hose Stubs",
-    depthFt: 20,
+    category: "DSV / BOV Compatibility",
+    title: "Swapping DSV to BOV While Leaving Old Hose Stubs Installed",
+    depthFt: 25,
     setpoint: 0.7,
     diluent: "21/00",
     cells: ["0.70", "0.71", "0.70"],
-    hudState: "3 YELLOW BLINKS",
+    hudState: "3 YELLOW BLINKS (DISPLAYS NORMAL)",
     scenarioText:
-      "A diver swaps from their standard P2 DSV to a Hollis BOV before a trip, but leaves the old DSV hose stubs attached to the corrugated hoses instead of swapping the complete assembly. What hazard does the Hollis manual warn about?",
+      "Before a trip, a diver upgrades from a standard Hollis DSV to a Hollis BOV by unthreading the hose couplings and attaching the new BOV body onto their existing DSV hose stubs and valve cages. Why is this flagged as a critical hazard?",
     options: [
       {
-        label: "A. DSV and BOV directional flow cages and stub fittings are NOT interchangeable—mixing components can jam the barrel or defeat the one-way mushroom valves, causing fatal CO2 pendulum breathing.",
+        label:
+          "Hollis DSV and BOV stub fittings and directional valve cages have different internal tolerances and are non-interchangeable, risking check-valve bypass and fatal CO2 rebreathing.",
         isCorrect: true,
-        feedback: "Correct. Hollis explicitly warns never to mix DSV and BOV fittings/stubs; always swap the complete mouthpiece + hose assembly and perform the stereo mushroom valve check.",
+        feedback:
+          "Correct. DSV and BOV directional cages and hose stubs must never be mixed—always swap the matched valve-and-stub assembly together and run a directional flow test.",
       },
       {
-        label: "B. The BOV will only work in open-circuit mode.",
+        label:
+          "DSV hose stubs use metric threads whereas the BOV body uses imperial threads, causing the breathing hoses to blow off the mouthpiece as soon as the ADV triggers.",
         isCorrect: false,
-        feedback: "The issue is mechanical incompatibility of the stubs/valve cages, which compromises loop sealing and directional check valves.",
+        feedback:
+          "Incorrect. The outer coupling threads physically mate (which is why divers make this mistake!), making the hidden internal check-valve mismatch so insidious.",
       },
       {
-        label: "C. It has no effect as long as the O-rings are lubricated.",
+        label:
+          "Leaving DSV stubs on a BOV blocks the open-circuit second-stage exhaust tee, causing the BOV demand diaphragm to freeflow continuously whenever diluent is pressurized.",
         isCorrect: false,
-        feedback: "False—DSV and BOV components have different tolerances and valve cage retainers.",
+        feedback:
+          "Incorrect. The open-circuit demand exhaust sits centrally on the BOV front cover; the danger of mismatched stubs lies in compromising closed-circuit directional mushroom sealing.",
+      },
+      {
+        label:
+          "DSV stubs lack the internal stainless grounding ring required by the BOV, causing static interference across the DiveCAN NERD 2 and HUD optical counterweight mounts.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. DiveCAN cables are internally shielded inside their own 5-pin jackets and do not ground through Delrin mouthpiece stubs.",
       },
     ],
   },
   {
     id: "p2_12",
     level: "P2 Hardware",
-    category: "1st Stage Over-Pressure",
-    title: "Creeping O2 1st Stage Intermediate Pressure (>145 psi)",
+    category: "Regulator Failure",
+    title: "O2 First Stage Relief Bubbles & Creeping Loop PPO2",
     depthFt: 60,
     setpoint: 1.2,
     diluent: "21/00",
     cells: ["1.48", "1.50", "1.49"],
-    hudState: "5 GREEN BLINKS + BUBBLES FROM RIGHT SHOULDER",
+    hudState: "5 GREEN BLINKS + BUBBLES BEHIND RIGHT SHOULDER",
     scenarioText:
-      "At 60ft, your teammate signals that a steady stream of small bubbles is coming from the over-pressure relief valve on your right-hand O2 1st stage regulator, and your loop PPO2 is creeping up toward 1.50 even though the solenoid isn't firing. What failed?",
+      "At 60ft, your teammate signals a steady stream of fine bubbles escaping from the over-pressure relief valve on your right-hand O2 first stage, while your loop PPO2 creeps up to 1.50 without solenoid clicks. What failed and what is your response?",
     options: [
       {
-        label: "A. The O2 1st stage high-pressure seat is creeping, driving Intermediate Pressure (IP) well above the 140–145 psi spec—popping the 1st stage relief valve and forcing O2 past the solenoid/MAV seat. Bail out, close the O2 tank valve, flush the loop, and feather the O2 tank valve manually to abort.",
+        label:
+          "The O2 1st stage HP seat is creeping past 145 psi IP, popping the safety relief valve and forcing O2 past the solenoid seat; shut the O2 tank valve, flush diluent, and feather O2 manually to abort.",
         isCorrect: true,
-        feedback: "Spot on. When 1st stage IP creeps excessively high, the safety relief valve vents to prevent hose rupture, and excess IP can overcome the closed solenoid or MAV seat. Shutting the O2 tank valve and feathering it manually controls the leak.",
+        feedback:
+          "Spot on. Excessive intermediate pressure simultaneously lifts the 1st stage over-pressure relief valve and overpowers the closed solenoid plunger seat into the head.",
       },
       {
-        label: "B. Your OPV on the counterlung is set too loose.",
+        label:
+          "The right-lung OPV spring has weakened and is venting normal loop gas behind your shoulder; rotate the OPV clockwise and lower your electronic setpoint to 1.0 ata.",
         isCorrect: false,
-        feedback: "Bubbles from the 1st stage relief valve combined with rising PPO2 indicate a high-pressure 1st stage seat creep.",
+        feedback:
+          "Incorrect. A loose counterlung OPV vents loop gas without raising PPO2—rising PPO2 paired with bubbles at the green 1st stage confirms high-pressure O2 regulator creep.",
       },
       {
-        label: "C. Switch setpoint to 1.6 so the computer stops alarming.",
+        label:
+          "Your solenoid is stuck electrically open due to a shorted SOLO FET; unplug the Manual O2 Addition Block QD hose and leave the right-hand O2 cylinder valve fully open.",
         isCorrect: false,
-        feedback: "Never mask a mechanical oxygen leak by raising setpoint.",
+        feedback:
+          "Incorrect. An electrical solenoid fault does not cause bubbles to vent from the 1st stage over-pressure relief valve, and leaving the O2 tank valve open will continue over-pressurizing the hose.",
+      },
+      {
+        label:
+          "Cold water has caused the DIN wheel O-ring on the O2 cylinder to extrude; switch to open-circuit bailout and leave the O2 cylinder valve open so water cannot enter the 1st stage.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. An external DIN O-ring leak bleeds gas into the water without raising loop PPO2; when loop PPO2 is climbing uncommanded, you must close the O2 valve.",
+      },
+    ],
+  },
+  {
+    id: "p2_13",
+    level: "P2 Hardware",
+    category: "Scrubber Bypass",
+    title: "Greased Red Silicone Head Seal Slippage",
+    depthFt: 50,
+    setpoint: 1.2,
+    diluent: "21/00",
+    cells: ["1.20", "1.21", "1.20"],
+    hudState: "2 GREEN BLINKS (ELECTRONICS NORMAL)",
+    scenarioText:
+      "Before diving, a diver applies oxygen-compatible lubricant to ALL red seals on the P2 head—including the wide flat red silicone CO2 seal inside the underside head groove. Fifteen minutes into the dive at 50ft, they develop severe air hunger and panic. Why?",
+    options: [
+      {
+        label:
+          "Lubricating the red silicone CO2 seal makes it slick, causing it to squirm out of its groove against the scrubber basket lip and allowing exhaled CO2 to bypass the absorbent bed.",
+        isCorrect: true,
+        feedback:
+          "Critical P2 rule: Lubricate the two outer red head-to-bucket O-rings, NEVER the wide red silicone CO2 seal. It must stay completely dry and gummy to seal the radial basket top.",
+      },
+      {
+        label:
+          "PTFE lubricant reacts exothermically with soda lime dust at 50ft, releasing toxic fluorocarbon vapors into the inhalation pathway without altering galvanic O2 readings.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Cristo-Lube/Tribolube is chemically inert at diving temperatures; the danger on the red CO2 seal is purely mechanical slippage creating an un-scrubbed gas bypass.",
+      },
+      {
+        label:
+          "Excess grease migrates upward onto the Teflon faces of all three O2 sensors, locking their readings at 1.20 ata while the solenoid starves the diver of oxygen.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Hypoxia does not cause severe air hunger or labored breathing—un-scrubbed CO2 bypassing a displaced red basket seal triggers violent hypercapnic air starvation.",
+      },
+      {
+        label:
+          "Lubricating the inner seal seals the scrubber too tightly, preventing radial gas expansion and doubling resistive work of breathing across the outer mesh screen.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. A slipped inner CO2 seal lowers breathing resistance rather than raising it because gas takes the path of least resistance straight past the scrubber top into the inhale port.",
+      },
+    ],
+  },
+  {
+    id: "p2_14",
+    level: "P2 Hardware",
+    category: "Dual-Bus Calibration",
+    title: "NERD 2 PPO2 Offset From Primary Wrist Handset",
+    depthFt: 0,
+    setpoint: 0.7,
+    diluent: "21/00",
+    cells: ["0.98", "0.98", "0.98"],
+    hudState: "NERD 2 READS: 0.89 / 0.90 / 0.89 IN PURE O2",
+    scenarioText:
+      "During Step 7 of your run-up, you flow 100% O2 with the DSV cracked and calibrate your primary wrist handset, which cleanly updates to 0.98 across all cells. Glancing at your DiveCAN NERD 2, however, it reads 0.89 / 0.90 / 0.89. Why?",
+    options: [
+      {
+        label:
+          "The SOLO control bus (handset) and OBOE monitor bus (NERD 2 / HUD) store calibration scaling factors independently; you must also run Calibrate inside the NERD 2 menu.",
+        isCorrect: true,
+        feedback:
+          "Spot on. For true hardware independence on the P2, the SOLO board and OBOE board maintain separate calibration tables—both displays must be calibrated during your O2 flush.",
+      },
+      {
+        label:
+          "The NERD 2 automatically subtracts water vapor pressure and barometric altitude offsets twice when mounted downstream of the DSV, making a 0.09 ata offset normal.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Both Shearwater devices sit on the same three sensor splits inside the head and must agree within ±0.02 ata once both buses are calibrated.",
+      },
+      {
+        label:
+          "Your sensors are current-limiting under the electrical load of driving two digital displays simultaneously, requiring immediate replacement of all three O2 cells.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. High-impedance amplifier inputs on SOLO and OBOE draw virtually zero current from the galvanic cells; an uncalibrated OBOE bus is simply using stale old scaling factors.",
+      },
+      {
+        label:
+          "The 5-pin DiveCAN monitor connector has corroded pins causing a 10% analog voltage drop along the cable to the NERD 2 eyepiece; clean the external plug with contact spray.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. DiveCAN transmits digital CAN-bus packets from the OBOE board inside the head to the NERD 2—cable resistance cannot cause a proportional analog voltage drop.",
+      },
+    ],
+  },
+  {
+    id: "p2_15",
+    level: "P2 Hardware",
+    category: "HUD Power Warning",
+    title: "Solid Yellow LED Row for 30 Seconds on HUD Startup",
+    depthFt: 0,
+    setpoint: 0.7,
+    diluent: "21/00",
+    cells: ["0.21", "0.21", "0.21"],
+    hudState: "SOLID YELLOW ROW FOR 30s THEN NORMAL BLINKS",
+    scenarioText:
+      "When you wet your fingers and turn on the Hollis LED HUD during bench setup, a solid row of yellow LEDs illuminates for 30 seconds before transitioning into normal ambient-air blink patterns. What does this tell you?",
+    options: [
+      {
+        label:
+          "The 3.6V Saft LS14500 lithium battery powering the OBOE/HUD circuit inside the head is low; replace it before diving because the HUD gives zero mid-dive low-battery warnings.",
+        isCorrect: true,
+        feedback:
+          "Critical P2 detail! That 30-second solid yellow bar at turn-on is the ONLY low-battery alert the LED HUD ever displays—it will never flash a battery warning underwater.",
+      },
+      {
+        label:
+          "The HUD is performing its mandatory 30-second sensor warm-up and ambient barometric zeroing sequence; once normal blinks resume, the battery is confirmed >85%.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Normal HUD startup cycles through every LED briefly to verify bulb health; holding a solid yellow row for 30 seconds is the specific low-battery fault code.",
+      },
+      {
+        label:
+          "The OBOE board detected >15% millivolt drift since your last calibration and is prompting you to flush with 100% O2 and double-tap Column 3 within two minutes.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Calibration failure on the HUD is indicated by top and bottom red LEDs lighting solid after a calibration command, not a 30-second yellow bar at boot.",
+      },
+      {
+        label:
+          "Moisture has bridged the external wet-contact pins on the HUD end-cap, locking the unit inside Command Column 2 until rinsed with fresh water and dried.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Continuous wet-contact bridging underwater is normal in saltwater and does not trigger a 30-second solid yellow startup bar.",
       },
     ],
   },
 
   // =====================================================
-  // TEC 40 CCR SCENARIOS (13 - 25)
+  // MOD 1: AIR / EANx CCR SCENARIOS (16 - 30)
   // =====================================================
   {
-    id: "t40_13",
-    level: "Tec 40 CCR",
+    id: "m1_16",
+    level: "Mod 1: Air/EANx",
     category: "Oxygen Sensor Diagnostics",
-    title: "Suspiciously Steady Sensor Readings at 110ft",
+    title: "Unchanging Identical Sensor Readings at 110ft",
     depthFt: 110,
     setpoint: 1.2,
     diluent: "21/00",
     cells: ["1.20", "1.20", "1.20"],
-    hudState: "2 GREEN BLINKS (STEADY)",
+    hudState: "2 GREEN BLINKS (ZERO FLUCTUATION)",
     scenarioText:
-      "You are 35 minutes into a dive at 110ft. During your 1-to-2 minute instrument scan, you notice all three cells read an identical 1.20—and have not fluctuated by even 0.01 over your last several breaths, nor have you heard the solenoid fire recently. What is your immediate diagnostic step?",
+      "Thirty-five minutes into a steady wreck dive at 110ft, your instrument scan shows 1.20 / 1.20 / 1.20—and none of the three digits have shifted by even 0.01 over several breaths, nor has the solenoid clicked recently. What is your immediate check?",
     options: [
       {
-        label: "A. Manually inject a burst of O2 first to see if the sensors climb above 1.20.",
-        isCorrect: false,
-        feedback: "Dangerous! If moisture has blocked the cell membranes or the cells are stuck, actual loop PPO2 might already be dangerously high.",
-      },
-      {
-        label: "B. Perform a Diluent Flush (replacing loop gas with known DilPO2) and breathe 3–4 times to verify all three sensors drop to the expected DilPO2 for 110ft.",
+        label:
+          "Execute a diluent flush with known air diluent (expected 0.91 ata at 110ft) and watch over 3–4 breaths to verify all three sensors drop briskly and respond.",
         isCorrect: true,
-        feedback: "Correct. Sensors that do not fluctuate with breathing may be 'stuck' due to condensation. Flushing with diluent introduces a known safe gas with a lower PPO2, proving whether the sensors respond.",
+        feedback:
+          "Correct. Completely frozen digits suggest condensation blocking the sensor membranes or electronic lockup. Flushing with known lower-PO2 diluent safely proves real-time cell response.",
       },
       {
-        label: "C. Nothing is wrong—PID controllers hold 1.20 with zero fluctuation.",
+        label:
+          "Inject a 2-second manual burst of oxygen first to verify that all three cells climb cleanly to 1.35+ ata without wasting onboard diluent or altering buoyancy.",
         isCorrect: false,
-        feedback: "Normal metabolic consumption and breathing cycles always cause minor 0.01–0.03 fluctuations.",
+        feedback:
+          "Dangerous trap! If water droplets or current-limiting froze the cells at 1.20 while actual loop PPO2 crept higher, adding pure O2 at 110ft could trigger an instant CNS convulsion.",
+      },
+      {
+        label:
+          "Continue the dive normally while maintaining your 90-second scan habit, since modern PID solenoid controllers hold loop PPO2 within ±0.002 ata at constant depth.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Even with digital PID firing, normal inhalation/exhalation mixing and metabolic uptake always produce minor 0.01–0.03 ata ripples across healthy cells.",
+      },
+      {
+        label:
+          "Lower your handset setpoint from 1.20 down to 0.70 ata and wait three minutes to see whether metabolic oxygen consumption pulls the display numbers downward.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Waiting three minutes on a potentially hypoxic or hyperoxic loop with unresponsive displays wastes critical reaction time when a diluent flush gives an answer in 10 seconds.",
       },
     ],
   },
   {
-    id: "t40_14",
-    level: "Tec 40 CCR",
+    id: "m1_17",
+    level: "Mod 1: Air/EANx",
     category: "Rescue Procedures",
-    title: "Unresponsive CCR Diver Underwater",
+    title: "Unresponsive CCR Teammate Face-Down at 55ft",
     depthFt: 55,
     setpoint: 1.2,
     diluent: "21/00",
     cells: ["1.20", "1.21", "1.19"],
-    hudState: "VICTIM UNRESPONSIVE FACE-DOWN",
+    hudState: "TEAMMATE UNRESPONSIVE WITH MOUTHPIECE IN",
     scenarioText:
-      "Your teammate becomes unresponsive at 55ft with the CCR mouthpiece still in their mouth. Before you turn the victim face-up and begin a controlled ascent to the surface, what is the critical first step with their mouthpiece/BOV and why?",
+      "Your buddy goes unresponsive face-down at 55ft with their BOV mouthpiece still in their mouth. Before rolling them upright into a vertical ascent position and ascending, what is your critical first manipulation of their mouthpiece?",
     options: [
       {
-        label: "A. Pull the mouthpiece out of their mouth so expanding loop gas doesn't cause an embolism.",
-        isCorrect: false,
-        feedback: "Never remove a mouthpiece that is in an unconscious diver's mouth! Removing it drowns the airway and floods the CCR loop.",
-      },
-      {
-        label: "B. Hold the mouthpiece in their mouth and CLOSE the loop (activating the BOV) BEFORE turning them upright, then ascend while venting their BCD/suit/loop as needed.",
+        label:
+          "Hold the mouthpiece firmly in their mouth and rotate the BOV lever to Open-Circuit (closing the loop) BEFORE turning them upright, then control buoyancy up to the surface.",
         isCorrect: true,
-        feedback: "Spot on. Closing the loop/activating the BOV before turning the victim upright prevents hydrostatic loop pressure from blowing the mouthpiece out, keeps the loop from flooding, and delivers clean OC diluent if they gasp.",
+        feedback:
+          "Spot on. Closing the loop / switching BOV to OC before rolling them upright prevents hydrostatic counterlung pressure from blowing the mouthpiece out, prevents loop flooding, and feeds safe OC gas if they gasp.",
       },
       {
-        label: "C. Leave the loop open in CC mode and press their manual O2 valve continuously on the way up.",
+        label:
+          "Remove the BOV from their mouth immediately so expanding loop gas cannot over-pressurize their alveoli during ascent, and tilt their chin slightly downward to drain water.",
         isCorrect: false,
-        feedback: "Leaving the loop open in CC mode keeps them on potentially toxic gas and risks flooding the loop if their jaw relaxes.",
+        feedback:
+          "Never pull a retained mouthpiece out of an unconscious diver's mouth! Doing so exposes their airway to drowning and floods the CCR loop, adding 15+ lbs of negative weight.",
+      },
+      {
+        label:
+          "Leave the BOV in closed-circuit mode so the warm loop gas protects their airway, roll them upright first, and hold down their manual diluent button during ascent.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Leaving the loop open in CC mode keeps them exposed to whatever bad loop gas caused blackout, and rolling upright first makes positive pressure pop the mouthpiece out.",
+      },
+      {
+        label:
+          "Shut both of the victim's onboard O2 and Diluent cylinder valves first to prevent a buoyant runaway, leave the BOV in CC mode, and tow them up using your own wing.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Shutting their diluent valve disables BOV open-circuit breathing and wing inflation if they gasp or need buoyancy lift—switch the BOV to OC and keep the mouthpiece seated.",
       },
     ],
   },
   {
-    id: "t40_15",
-    level: "Tec 40 CCR",
+    id: "m1_18",
+    level: "Mod 1: Air/EANx",
     category: "Pneumatics / Diluent",
-    title: "Runaway ADV / Manual Diluent Valve Freeflow",
+    title: "Runaway ADV / Manual Diluent Freeflow at 95ft",
     depthFt: 95,
     setpoint: 1.2,
     diluent: "21/00",
     cells: ["0.64", "0.65", "0.64"],
-    hudState: "4 YELLOW BLINKS (DROPPING)",
+    hudState: "4 YELLOW BLINKS + ROARING GAS IN LOOP",
     scenarioText:
-      "At 95ft, you hear gas roaring continuously into your inhalation counterlung. Your loop volume balloons, making you positively buoyant, and your PPO2 drops toward 0.64 as incoming diluent flushes out oxygen. How do you control the rig?",
+      "At 95ft, gas begins roaring continuously into your inhalation counterlung. Your counterlungs balloon tight, pulling you upward, while loop PPO2 drops toward 0.64 ata as air flushes out excess oxygen. What is your priority sequence?",
     options: [
       {
-        label: "A. Close the OPV completely so you don't waste gas, and press the manual O2 button to fight the diluent flow.",
-        isCorrect: false,
-        feedback: "Closing the OPV during a diluent freeflow will over-inflate your counterlungs and launch you into a runaway buoyant ascent.",
-      },
-      {
-        label: "B. Vent loop gas via nose/mouthpiece and OPV to prevent a buoyant runaway, bail out to offboard OC if needed to breathe comfortably, and shut down the left-hand Diluent tank valve (or disconnect the leaking LP QD feed).",
+        label:
+          "Dump excess gas immediately via nose/mouthpiece and OPV to arrest upward buoyancy, switch to offboard OC if needed, and shut the left-hand Diluent valve (or unplug the MAV QD).",
         isCorrect: true,
-        feedback: "Correct. Priority one is preventing a runaway ascent by venting excess loop/BCD gas, then shutting down the left-side diluent supply or unplugging the leaking QD.",
+        feedback:
+          "Correct. Stopping a runaway buoyant ascent comes first; once neutral and breathing comfortably, isolate the freeflowing left-hand diluent supply or QD hose and abort.",
       },
       {
-        label: "C. Switch to BOV open-circuit mode and keep the diluent valve wide open.",
+        label:
+          "Dial the counterlung OPV fully clockwise to conserve onboard diluent, hold the manual O2 button down to keep PPO2 above 1.0, and swim downward against the lift.",
         isCorrect: false,
-        feedback: "If the ADV or MAV is freeflowing into the loop, switching the BOV to OC without shutting the diluent valve/QD will still balloon the loop and drain your onboard diluent.",
+        feedback:
+          "Fatal error! Closing the OPV during a mechanical diluent freeflow turns your counterlungs into a lift bag and risks rupturing a bladder or rocketing you through deco ceilings.",
+      },
+      {
+        label:
+          "Rotate your BOV into Open-Circuit mode while leaving the left-hand Diluent cylinder valve wide open so the BOV second stage consumes the excess intermediate pressure.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Switching the BOV barrel closes off the mouthpiece from the loop—trapping the roaring ADV/MAV freeflow inside the sealed counterlungs and launching you upward even faster!",
+      },
+      {
+        label:
+          "Close the right-hand Oxygen cylinder valve first to prevent hyperoxia, purge your drysuit completely, and feather the left-hand Diluent valve only after reaching 20ft.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Oxygen is not freeflowing—left-side diluent is! Leaving a roaring diluent freeflow open until 20ft guarantees a uncontrolled buoyant blow-up and drained tank.",
       },
     ],
   },
   {
-    id: "t40_16",
-    level: "Tec 40 CCR",
-    category: "Non-Return Valves",
-    title: "Mushroom Valve Failure (Pendulum Breathing)",
+    id: "m1_19",
+    level: "Mod 1: Air/EANx",
+    category: "Directional Check Valves",
+    title: "Severe Air Hunger With Rock-Steady Green Displays",
     depthFt: 70,
     setpoint: 1.2,
     diluent: "21/00",
     cells: ["1.20", "1.19", "1.21"],
     hudState: "2 GREEN BLINKS (ALL DISPLAYS NORMAL)",
     scenarioText:
-      "Twenty minutes into a dive at 70ft with zero exertion, you suddenly feel severe air starvation, a pounding headache, and rapid labored breathing. You check your handset and HUD: PPO2 is 1.20 and everything is green, and you haven't heard the solenoid fire in a while. What failed and can you stay on the loop?",
+      "Twenty minutes into a relaxed cruise at 70ft with minimal swimming, you suddenly experience intense air starvation, a throbbing temple headache, and rapid deep breathing. Your handset and HUD read a steady 1.20 ata green. What failed and how do you respond?",
     options: [
       {
-        label: "A. A DSV/BOV mushroom (non-return) valve has failed or warped, causing you to rebreathe dead-space CO2 back and forth in the hose while fresh oxygen sits stagnant at the sensors. Bail out to OC immediately and DO NOT return to the loop.",
+        label:
+          "A mouthpiece directional mushroom valve has curled or torn, causing dead-space CO2 pendulum rebreathing while fresh gas stagnates at the head; bail out to OC permanently.",
         isCorrect: true,
-        feedback: "Exact Tec 40 CCR diagnosis. Mushroom valve failure is silent on your electronics because gas stops circulating past the scrubber and sensors—it is 100% unrecoverable underwater. Bail out and abort on OC.",
+        feedback:
+          "Exact diagnosis. Failed check valves trap exhaled CO2 oscillating in the corrugated hoses without reaching the scrubber or O2 sensors—electronics look normal, and the loop is unrecoverable.",
       },
       {
-        label: "B. Perform a diluent flush and stay on the loop since your displays are green.",
+        label:
+          "Your radial scrubber has developed a slight cold-water efficiency dip; perform a thorough 5-second diluent flush, slow your finning pace, and remain on closed-circuit to ascend.",
         isCorrect: false,
-        feedback: "A diluent flush only clears the loop for 1–2 breaths if a mushroom valve has failed; CO2 will immediately build back up in the hose.",
+        feedback:
+          "Dangerous trap! Fighting CO2 symptoms by staying on the loop with repeated diluent flushes builds massive tissue CO2 debt; whether check-valve or breakthrough, bail out to OC immediately.",
       },
       {
-        label: "C. Raise setpoint to 1.4 to cure the air hunger.",
+        label:
+          "All three O2 sensors are stuck high while actual loop gas has dropped hypoxic; press the manual O2 button for three seconds to relieve the shortness of breath.",
         isCorrect: false,
-        feedback: "Air starvation with a normal PPO2 is hypercapnia (CO2), not hypoxia. Raising setpoint will not fix a failed check valve.",
+        feedback:
+          "Incorrect. Hypoxia causes euphoria or sudden blackout WITHOUT shortness of breath—violent air hunger and headache are classic hypercapnia (CO2), which O2 injection cannot fix.",
+      },
+      {
+        label:
+          "Your loop volume is slightly over-inflated, increasing hydrostatic load; exhale three full breaths out your nose to restore Minimum Loop and continue your planned bottom time.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Once acute hypercapnia symptoms (air starvation + pounding headache) strike, CO2 retention is already critical—never stay on the loop trying to 'breathe through it'.",
       },
     ],
   },
   {
-    id: "t40_17",
-    level: "Tec 40 CCR",
+    id: "m1_20",
+    level: "Mod 1: Air/EANx",
     category: "Chemical Hazards",
-    title: "Flooded Loop & Caustic Cocktail",
+    title: "Flooded Loop & Alkaline Caustic Cocktail",
     depthFt: 45,
     setpoint: 1.2,
     diluent: "21/00",
     cells: ["1.15", "0.92", "1.18"],
-    hudState: "GURGLING + BURNING TASTE IN MOUTH",
+    hudState: "HEAVY GURGLING + BURNING SOAPY LIQUID",
     scenarioText:
-      "After accidentally leaving the DSV partially cracked during a drill, you hear heavy gurgling, feel high breathing resistance, and suddenly get a soapy, burning alkaline liquid in your mouth on inhalation. What is the immediate procedure and post-dive first aid?",
+      "After bumping an unlocked DSV while stowing a reel, water floods the loop and your next inhalation draws burning, soapy alkaline liquid into your mouth. What is the immediate underwater procedure and proper surface first-aid rinse?",
     options: [
       {
-        label: "A. Swallow the liquid to clear your airway, flush with diluent, and keep diving.",
-        isCorrect: false,
-        feedback: "Never swallow alkaline soda lime solution or attempt to stay on a flooded loop!",
-      },
-      {
-        label: "B. Immediately bail out to BOV/offboard OC, spit/blow the liquid out and rinse your mouth with water, abort the dive on OC, and sip a mildly acidic beverage (like orange juice or soda—not milk) at the surface while seeking medical evaluation if irritation persists.",
+        label:
+          "Bail out to open-circuit immediately, spit and swish clean seawater/water through your mouth without swallowing, abort on OC, and sip a weak acid like orange juice on deck.",
         isCorrect: true,
-        feedback: "Spot on. A flooded loop is unrecoverable. Bail out immediately, rinse your mouth, abort on OC, and use a mildly acidic drink (orange juice/soda) at the surface to neutralize residual alkaline sodalime.",
+        feedback:
+          "Correct. Get off the loop instantly, flush your mouth repeatedly with water underwater, ascend on OC, and use a mild food acid (juice/vinegar-water) on deck to neutralize residual base without violent heat.",
       },
       {
-        label: "C. Tilt your head up and press the manual O2 button to blow the water back into the scrubber.",
+        label:
+          "Switch to BOV open-circuit, swallow any liquid in your pharynx so you do not aspirate droplets into your lungs, and induce vomiting immediately upon boarding the boat.",
         isCorrect: false,
-        feedback: "Tilting your head up runs caustic water straight down your trachea.",
+        feedback:
+          "Never swallow caustic soda lime liquid and never induce vomiting after alkaline exposure—vomiting burns the esophagus a second time and risks pulmonary aspiration!",
+      },
+      {
+        label:
+          "Purge the mouthpiece using your manual oxygen button while tilting your head back, drain the right counterlung trap, and flush with diluent to dilute the remaining bed.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Tilting your head back pours alkaline solution straight toward your vocal cords and trachea, and a flooded soda lime canister can never be recovered mid-dive.",
+      },
+      {
+        label:
+          "Bail out to offboard open-circuit, keep your mouth sealed around the second stage without rinsing underwater, and gargle concentrated sodium bicarbonate solution at the surface.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Immediate copious water rinsing underwater is essential to halt chemical tissue burns, and sodium bicarbonate is itself alkaline—it will not neutralize caustic hydroxide.",
       },
     ],
   },
   {
-    id: "t40_18",
-    level: "Tec 40 CCR",
+    id: "m1_21",
+    level: "Mod 1: Air/EANx",
     category: "Surface Protocol",
-    title: "Entering the Water with Cylinder Valves Closed ('Mistake #1')",
+    title: "Quick Shallow Re-Entry With Cylinder Valves Closed",
     depthFt: 12,
     setpoint: 0.7,
     diluent: "21/00",
-    cells: ["0.15", "0.14", "0.15"],
-    hudState: "RED ALARM FLASHING",
+    cells: ["0.14", "0.15", "0.14"],
+    hudState: "BOTTOM RED LEDS FLASHING RAPIDLY",
     scenarioText:
-      "Fifteen minutes after surfacing from Dive 1, a diver jumps back into 12ft of water to retrieve a dropped GoPro without repeating a predive check or pre-breath—forgetting they had already closed their O2 and Diluent tank valves. Why is shallow water / surface breathing on a turned-off CCR the #1 cause of rapid hypoxic blackout?",
+      "Ten minutes after surfacing and shutting down cylinder valves on deck, a diver pops the mouthpiece back in without a checklist or pre-breath and drops to 12ft to grab a dropped camera. Why does a turned-off CCR cause sudden blackout in shallow water with zero warning?",
     options: [
       {
-        label: "A. Without O2 injection, metabolic consumption drops loop FO2 steadily, and without ambient depth pressure to multiply that fraction, inspired PPO2 plunges below the 0.16 ata blackout threshold within a few minutes without causing any CO2 air-hunger warning.",
+        label:
+          "Granular absorbent continues scrubbing exhaled CO2 passively without tank pressure, eliminating any air-hunger reflex while metabolism rapidly drains shallow loop PPO2 below 0.16 ata.",
         isCorrect: true,
-        feedback: "Correct. Because the scrubber still removes CO2 smoothly even with the tanks closed, you feel zero shortness of breath while metabolizing the loop down to <0.16 ata unconsciousness. Never jump in for a 'quick' dive without a full predive check and pre-breath.",
+        feedback:
+          "Spot on. Human breathing drive responds to rising CO2, not falling O2. Because the scrubber keeps CO2 near zero even with tanks shut, the diver feels totally normal right up to hypoxic unconsciousness.",
       },
       {
-        label: "B. Because the scrubber stops removing CO2 when the tank valves are closed.",
+        label:
+          "With both cylinder valves closed, the unpowered solenoid vents remaining head pressure out the battery relief valve, collapsing the counterlungs and causing thoracic squeeze at 12ft.",
         isCorrect: false,
-        feedback: "Soda lime is a passive chemical reaction—it continues scrubbing CO2 even with the gas valves closed, which is why hypoxia strikes without warning!",
+        feedback:
+          "Incorrect. Closed tank valves do not vent loop gas out the head relief valve; the lethal trap is silent metabolic oxygen depletion without CO2 buildup.",
       },
       {
-        label: "C. Because nitrogen narcosis is strongest at 12ft.",
+        label:
+          "Cold shallow water stops the endothermic soda lime reaction within 60 seconds when diluent flow is absent, causing instantaneous CO2 narcosis on the third breath.",
         isCorrect: false,
-        feedback: "Narcosis is not a factor at 12ft; unwarned shallow-water hypoxia is the killer.",
+        feedback:
+          "Incorrect. Soda lime CO2 absorption is exothermic (heat-producing) and works independently of tank valves—and CO2 causes intense air starvation before blackout, unlike silent hypoxia.",
+      },
+      {
+        label:
+          "Descending from 0ft to 12ft compresses residual nitrogen in the unpressurized loop by 36%, creating acute shallow-water counterdiffusion across alveolar capillaries.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Compressing loop gas slightly raises partial pressures temporarily during descent, but ongoing metabolic O2 burn at shallow ambient pressure quickly drives FO2 below survival limits.",
       },
     ],
   },
   {
-    id: "t40_19",
-    level: "Tec 40 CCR",
+    id: "m1_22",
+    level: "Mod 1: Air/EANx",
     category: "Alarm Management",
-    title: "Preventing Alarm Blindness vs. Alarm Habituation",
+    title: "Managing a Confirmed Single Failed Sensor During Abort",
     depthFt: 85,
     setpoint: 1.2,
     diluent: "21/00",
-    cells: ["1.20", "1.21", "0.35"],
-    hudState: "MASTER ALARM FLASHING",
+    cells: ["1.20", "1.21", "0.28"],
+    hudState: "MASTER ALARM FLASHING CONTINUOUSLY",
     scenarioText:
-      "At 85ft, Cell #3 fails low (0.35) while Cells #1 and #2 confirm accurate (1.20) on a diluent flush. Why does technical CCR protocol emphasize disabling/deselecting a confirmed failed sensor (or clearing a resolved master alarm) as you abort the dive?",
+      "At 85ft, Cell 3 drops to 0.28 while Cells 1 and 2 track together at 1.20 and respond accurately to a diluent flush check. As you call the dive and begin ascending on the loop, why do controllers/protocols address clearing or isolating a persistent single-cell alarm?",
     options: [
       {
-        label: "A. To prevent 'Alarm Blindness'—if a master alarm stays locked on from a known sensor fault, it cannot alert you if a second, life-threatening emergency occurs during your ascent.",
+        label:
+          "Leaving a master alarm locked on continuously creates system 'Alarm Blindness' and diver 'Alarm Habituation', potentially masking a second critical fault during decompression.",
         isCorrect: true,
-        feedback: "Correct. Leaving a master alarm flashing continuously causes both system Alarm Blindness (masking new faults) and diver Alarm Habituation (tuning out warnings).",
+        feedback:
+          "Correct. Once a fault is diagnosed and you have turned the dive, a permanently flashing master warning can hide new secondary emergencies (like low battery or high PPO2) on ascent.",
       },
       {
-        label: "B. So you can continue the dive as planned without aborting.",
+        label:
+          "Isolating or acknowledging the failed cell unlocks full three-cell redundancy again so the team can safely continue their planned bottom segment before ascending.",
         isCorrect: false,
-        feedback: "You never silence an alarm or disable a cell to continue a dive—you always turn the dive when a sensor fails.",
+        feedback:
+          "Never continue a bottom dive on two cells! Losing any O2 sensor immediately drops you to minimum two-cell voting—always terminate the dive and ascend cleanly.",
       },
       {
-        label: "C. Because disabling a sensor recharges the solenoid battery.",
+        label:
+          "Clearing the low-cell warning forces the SOLO board to boost voltage across Cell 3's gold Molex pins, evaporating trapped condensation off the sensing membrane.",
         isCorrect: false,
-        feedback: "Disabling a sensor has no effect on battery charge.",
+        feedback:
+          "Incorrect. Galvanic O2 cells are passive electrochemical fuel cells that generate their own millivolts—the controller never applies heating voltage to sensor pins.",
+      },
+      {
+        label:
+          "Unless the master alarm is cleared within 60 seconds, Shearwater controllers automatically lock out decompression tissue calculations and revert to simple bottom-timer mode.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Shearwater handsets never lock out decompression stop calculations during an active sensor warning.",
       },
     ],
   },
   {
-    id: "t40_20",
-    level: "Tec 40 CCR",
-    category: "Buoyancy & Weighting",
-    title: "Proper Tec CCR Weighting & Minimum Loop Check",
+    id: "m1_23",
+    level: "Mod 1: Air/EANx",
+    category: "Buoyancy & Trim",
+    title: "Verifying Proper CCR Ballast & Minimum Loop Volume",
     depthFt: 15,
     setpoint: 1.2,
     diluent: "21/00",
     cells: ["1.20", "1.20", "1.19"],
     hudState: "2 GREEN BLINKS",
     scenarioText:
-      "How do you verify that you are properly weighted for a technical CCR decompression dive, and how do you confirm 'Minimum Loop' volume at a constant depth?",
+      "How do you confirm your rig ballast is properly weighted for technical CCR decompression diving, and what physical cue confirms you have set optimal 'Minimum Loop' breathing volume at depth?",
     options: [
       {
-        label: "A. You should be able to remove all offboard bailout cylinders and hold a 15ft (5m) stop comfortably with an empty BCD, and at Minimum Loop a slightly deeper-than-normal inhalation should just trigger the ADV.",
+        label:
+          "You can hold a 15ft stop with an empty wing even after handing off all offboard stages, and at Minimum Loop a slightly deeper-than-normal inhalation just kisses the ADV.",
         isCorrect: true,
-        feedback: "Spot on. Weighting must allow you to hold 15ft even in a worst-case scenario where you handed off your bailout cylinders to a teammate, and Minimum Loop means holding just one normal breath in the counterlungs.",
+        feedback:
+          "Spot on. Worst-case CCR weighting accounts for passing off depleted/shared bailout stages to a teammate, while Minimum Loop keeps hydrostatic breathing effort minimal and loop flushes fast.",
       },
       {
-        label: "B. Inflate the counterlungs completely with the manual diluent button whenever you feel heavy.",
+        label:
+          "You float at eye level on the surface with a full wing, full counterlungs, and full stages, and at Minimum Loop the counterlung OPV vents a bubble at the peak of every exhalation.",
         isCorrect: false,
-        feedback: "Never use loop volume for buoyancy control—over-inflated counterlungs increase hydrostatic work of breathing and CO2 retention.",
+        feedback:
+          "Incorrect. If the OPV vents on every breath, your loop is completely over-full (maximum loop), causing severe hydrostatic loading and wasting gas continuously.",
       },
       {
-        label: "C. Use breath control (holding deep breaths) to fine-tune hovering just like open-circuit.",
+        label:
+          "You carry enough lead to sink effortlessly at the surface with full counterlungs and a half-inflated wing, using manual diluent injections into the loop to hover neutrally at stops.",
         isCorrect: false,
-        feedback: "Breathing does not change net displacement on a CCR because gas merely moves between your lungs and the counterlungs.",
+        feedback:
+          "Never over-weight yourself or use counterlung gas for buoyancy compensation—inflated counterlungs increase work of breathing and make PPO2 control sluggish.",
+      },
+      {
+        label:
+          "You weight strictly for full aluminum bailout stages at the start of the dive, relying on rhythmic deep-breath holding on the loop to fine-tune vertical trim during deco.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Breath-holding does zero buoyancy tuning on a closed-circuit rebreather because total displaced volume (diver lungs + counterlungs) stays constant throughout each breath.",
       },
     ],
   },
   {
-    id: "t40_21",
-    level: "Tec 40 CCR",
-    category: "Pneumatics / ADV",
-    title: "ADV Fails Closed During Descent",
+    id: "m1_24",
+    level: "Mod 1: Air/EANx",
+    category: "Pneumatics / Descent",
+    title: "Collapsed Counterlungs & Non-Firing ADV on Descent",
     depthFt: 50,
     setpoint: 1.2,
     diluent: "21/00",
     cells: ["1.25", "1.26", "1.24"],
     hudState: "3 GREEN BLINKS",
     scenarioText:
-      "While descending through 50ft, the counterlungs collapse flat against your chest and you cannot get a full breath in, even though your Diluent SPG reads 2,800 psi. What is your immediate sequence of actions?",
+      "Descending down the shotline through 50ft, your counterlungs flatten tight against your chest/shoulders and your inhalation bottoms out completely without triggering the ADV, though your Diluent SPG reads 2,800 psi. What is your immediate sequence?",
     options: [
       {
-        label: "A. Keep descending to 100ft so the higher water pressure forces the ADV open.",
-        isCorrect: false,
-        feedback: "Descending further with a collapsed loop causes a severe lung/loop squeeze and spikes PPO2.",
-      },
-      {
-        label: "B. Stop your descent immediately, press the Manual Diluent Addition button to restore breathable loop volume (or bail out to BOV if manual add fails), verify the diluent valve/QD is open, and abort the dive.",
+        label:
+          "Arrest your descent immediately, inject gas with the Manual Diluent Addition button (or bail out to OC if blocked), verify the diluent valve/QD hose, and abort the dive.",
         isCorrect: true,
-        feedback: "Correct. Stop descending immediately, inject diluent via the manual button to restore loop volume, and turn the dive since the automatic diluent valve is malfunctioning.",
+        feedback:
+          "Correct. Stop descending immediately to prevent pulmonary/loop barotrauma, restore breathable volume manually with diluent (never pure O2 at 50ft!), and turn the dive due to the faulty ADV.",
       },
       {
-        label: "C. Fill the collapsed counterlungs using only 100% O2 from the manual oxygen button at 50ft.",
+        label:
+          "Press the Manual Oxygen Addition button briskly to re-inflate the collapsed counterlungs at 50ft so you can keep descending while the higher pressure unsticks the ADV.",
         isCorrect: false,
-        feedback: "Filling a collapsed loop with pure O2 at 50ft (2.5 ata) will spike loop PPO2 into CNS toxicity!",
+        feedback:
+          "Fatal trap! Filling empty counterlungs with 100% O2 at 50ft (2.51 ata ambient pressure) drives loop PPO2 past 2.2+ ata instantly, risking an underwater CNS seizure.",
+      },
+      {
+        label:
+          "Exhale residual lung air through your nose into your mask while dropping to 80ft, allowing the steeper ambient pressure differential to pop the stuck ADV diaphragm open.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Dumping gas out your nose when the loop is already collapsed worsens loop squeeze and guarantees you have zero breathable volume on your next inhalation.",
+      },
+      {
+        label:
+          "Open the DSV barrel slightly for half a second to equalize hydrostatic loop pressure with ambient water, then snap it shut and continue descending on manual diluent.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Cracking the DSV while counterlungs are under negative squeeze sucks water straight into the breathing loop and canister!",
       },
     ],
   },
   {
-    id: "t40_22",
-    level: "Tec 40 CCR",
+    id: "m1_25",
+    level: "Mod 1: Air/EANx",
     category: "Mixed Team Protocols",
-    title: "Decompressing in a Mixed CCR + Open-Circuit Team",
-    depthFt: 90,
+    title: "Emergency Gas Sharing in a Mixed CCR + Open-Circuit Team",
+    depthFt: 110,
     setpoint: 1.2,
     diluent: "21/00",
     cells: ["1.20", "1.20", "1.21"],
-    hudState: "2 GREEN BLINKS",
+    hudState: "LOOP FLOODED + OWN BAILOUT DEPLETED",
     scenarioText:
-      "You are diving your P2 alongside an open-circuit technical diver wearing doubles and an EAN50 deco stage. At 110ft, you have an unrecoverable loop failure and exhaust your own bailout cylinder due to a freeflow. Which regulator from your OC teammate can you breathe at 110ft?",
+      "You are diving your CCR alongside an open-circuit technical teammate wearing backmounted doubles (EAN28) and a side-slung EAN50 deco stage. At 110ft, a burst hose drains your bailout tank right as your loop floods. Which teammate gas do you take?",
     options: [
       {
-        label: "A. Their EAN50 stage cylinder regulator because it has more oxygen.",
-        isCorrect: false,
-        feedback: "Fatal mistake! An open-circuit diver's deco stage (EAN50, MOD 60ft) is NOT a deep bailout gas—breathing 50% O2 at 110ft is 2.17 ata PPO2.",
-      },
-      {
-        label: "B. Their primary long-hose backgas regulator (doubles main supply), then ascend together following the most conservative computer on the team.",
+        label:
+          "Deploy gas-sharing on your teammate's primary long-hose backgas (EAN28), verify breathable MOD, and ascend together clearing whichever diver's computer is more conservative.",
         isCorrect: true,
-        feedback: "Correct. In a mixed OC/CCR team, an OC diver's stage bottle is a shallow decompression gas, not a deep bailout gas. At depth, you must share their breathable backgas via the long hose.",
+        feedback:
+          "Spot on. An open-circuit diver's stage cylinder is a high-O2 shallow deco mix (EAN50 = 2.17 ata at 110ft!), NOT deep bailout—at depth you must share their breathable backgas long hose.",
       },
       {
-        label: "C. Their drysuit argon inflation hose.",
+        label:
+          "Have your OC teammate unclip and pass you their independent EAN50 stage bottle immediately at 110ft so both divers can swim untethered to the 70ft decompression stop.",
         isCorrect: false,
-        feedback: "Argon has no oxygen and no second stage.",
+        feedback:
+          "Lethal mistake! Unlike a CCR diver's deep bailout stage, an OC diver's stage carries hyperoxic deco gas—breathing EAN50 at 110ft exposes you to 2.17 ata PPO2.",
+      },
+      {
+        label:
+          "Plug your teammate's low-pressure drysuit inflation hose into your Manual Diluent Addition quick-disconnect and breathe your flooded CCR in semiclosed mode to conserve their doubles.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Never breathe a flooded CCR loop in any mode (caustic cocktail hazard), and drysuit inflation systems often carry hypoxic/anesthetic Argon with zero oxygen!",
+      },
+      {
+        label:
+          "Share your teammate's primary backgas long hose up to 70ft, then follow your CCR computer's shorter decompression stops since your tissues loaded at 1.20 setpoint on the bottom.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Once tethered on shared open-circuit backgas, the pair stays together all the way to the surface—meaning both divers must clear the slower (usually OC) decompression schedule.",
       },
     ],
   },
   {
-    id: "t40_23",
-    level: "Tec 40 CCR",
+    id: "m1_26",
+    level: "Mod 1: Air/EANx",
     category: "Bailout Ascent",
-    title: "Managing Loop Expansion During an Open-Circuit Bailout Ascent",
+    title: "Venting Expanding Gas From a Sealed Loop on OC Ascent",
     depthFt: 40,
     setpoint: 0.7,
     diluent: "21/00",
     cells: ["0.95", "0.96", "0.95"],
-    hudState: "ON OFFBOARD OPEN-CIRCUIT BAILOUT",
+    hudState: "BREATHING OFFBOARD OPEN-CIRCUIT STAGE",
     scenarioText:
-      "You bailed out onto your offboard open-circuit cylinder at 100ft due to a scrubber issue and closed your DSV/BOV. As you ascend through 40ft, the trapped gas inside your sealed CCR counterlungs expands and makes you increasingly buoyant because the OPV isn't venting fast enough. How do you vent the sealed loop without flooding it?",
+      "After bailing out onto your offboard stage at 100ft due to suspected scrubber breakthrough and closing your DSV, you ascend through 40ft. Trapped gas inside your sealed counterlungs expands and makes you float upward. How do you vent the loop cleanly?",
     options: [
       {
-        label: "A. Leave the DSV wide open for the rest of the ascent so all gas escapes.",
-        isCorrect: false,
-        feedback: "Leaving the DSV wide open floods the entire loop and canister, causing a sudden 15+ lb loss of buoyancy.",
-      },
-      {
-        label: "B. Pull the counterlung OPV dump cord (BMCL) or hold the mouthpiece higher than the counterlungs pointing down and use a quick, sharp open-then-close motion to burp out expanding gas before it stops bubbling.",
+        label:
+          "Pull the counterlung OPV dump cord (BMCL) or hold the closed DSV higher than the lungs facing down and crack it briskly open-then-shut while gas bubbles out.",
         isCorrect: true,
-        feedback: "Spot on. Either use the counterlung OPV pull-dump or hold the mouthpiece above the lungs and crack it open-and-shut briskly while gas bubbles out, closing it before water can enter.",
+        feedback:
+          "Correct. Either actuate the counterlung dump/OPV or hold the mouthpiece at a high point and burp the barrel shut BEFORE bubbling stops so zero water enters the canister.",
       },
       {
-        label: "C. Switch back to breathing the CCR loop to exhale the gas through your nose.",
+        label:
+          "Rotate the DSV barrel wide open and tuck the mouthpiece under your chin strap for the remainder of the ascent so expanding gas vents passively at every stop.",
         isCorrect: false,
-        feedback: "Never inhale from a loop that you abandoned due to a scrubber failure!",
+        feedback:
+          "Incorrect. Leaving a DSV open while off the loop floods the hoses, counterlungs, and canister with water—causing a sudden 15+ lb negative buoyancy swing mid-ascent.",
+      },
+      {
+        label:
+          "Switch back onto the CCR mouthpiece for two quick breaths at each 10ft stop to inhale the excess loop volume and vent it safely out through your mask skirt.",
+        isCorrect: false,
+        feedback:
+          "Never inhale even a single breath from a loop abandoned for scrubber breakthrough or caustic flooding!",
+      },
+      {
+        label:
+          "Disconnect both breathing hoses at the head ports behind your neck so expanding counterlung gas vents directly without risking caustic backflow toward the mouthpiece.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Unthreading head hoses underwater floods the electronics head, destroys the O2 sensors, and saturates the soda lime canister.",
       },
     ],
   },
   {
-    id: "t40_24",
-    level: "Tec 40 CCR",
-    category: "Turn Pressures",
-    title: "Calculating Onboard Oxygen Turn Pressure",
+    id: "m1_27",
+    level: "Mod 1: Air/EANx",
+    category: "Gas Management",
+    title: "Calculating Onboard Oxygen Minimum Turn Pressure",
     depthFt: 100,
     setpoint: 1.2,
     diluent: "21/00",
     cells: ["1.20", "1.20", "1.20"],
     hudState: "2 GREEN BLINKS",
     scenarioText:
-      "You start a dive with a 3-liter (AL19) onboard O2 cylinder at 150 bar (450 liters total). You plan a 1/3 reserve (150 liters), leaving 300 liters of usable O2. Assuming a conservative 1.5 L/min metabolic rate and a 20-minute ascent + deco obligation (30 liters needed for ascent), at what O2 cylinder pressure must you turn the dive and leave the bottom?",
+      "You splash with a 3-liter (AL19) onboard O2 cylinder filled to 150 bar (450 free liters). Planning a 1/3 reserve (150 L / 50 bar), a conservative 1.5 L/min metabolic burn rate, and a 20-minute ascent + deco TTS, what is your minimum O2 turn pressure to leave bottom?",
     options: [
       {
-        label: "A. 60 bar (870 psi) — which leaves 30 liters (10 bar) for the 20-minute ascent plus your 150-liter (50 bar) reserve.",
+        label:
+          "60 bar (870 psi) — reserving 30 liters (10 bar) for your 20-minute metabolic burn during ascent/deco on top of your mandatory 150-liter (50 bar) 1/3 reserve.",
         isCorrect: true,
-        feedback: "Exact math! 50 bar reserve + 10 bar ascent gas = 60 bar (870 psi) minimum turn pressure to leave the bottom.",
+        feedback:
+          "Exact CCR O2 math! Metabolic O2 usage is independent of depth: 20 min × 1.5 L/min = 30 L (10 bar in a 3L tank), plus 50 bar reserve = 60 bar minimum turn pressure.",
       },
       {
-        label: "B. 10 bar (145 psi).",
+        label:
+          "90 bar (1,305 psi) — because ambient pressure at 100ft (4.0 ata) quadruples closed-circuit O2 solenoid consumption during ascent to 6.0 L/min (120 L / 40 bar) plus 50 bar reserve.",
         isCorrect: false,
-        feedback: "Turning at 10 bar leaves zero reserve if a delay occurs on ascent.",
+        feedback:
+          "Classic OC-mindset trap! Unlike open-circuit gas, closed-circuit metabolic oxygen consumption depends strictly on physical workload (0.5–1.5 L/min), NOT ambient depth pressure.",
       },
       {
-        label: "C. Oxygen consumption triples at 100ft compared to the surface.",
+        label:
+          "50 bar (725 psi) — because ascending from 100ft to the surface expands existing loop oxygen fourfold via Boyle's Law, eliminating any need for solenoid O2 injection on ascent.",
         isCorrect: false,
-        feedback: "On a CCR, metabolic O2 consumption (0.5–1.5 L/min) depends on physical exertion, not depth!",
+        feedback:
+          "Dangerous misconception! Ascending REDUCES ambient pressure, causing loop PPO2 to drop rapidly—the solenoid actually fires heavily during ascent to hold 1.2–1.4 setpoint.",
+      },
+      {
+        label:
+          "100 bar (1,450 psi) — applying the open-circuit rule of thirds where 1/3 (50 bar) is used on the bottom, 1/3 is used on ascent, and 1/3 is kept in reserve.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. On a CCR with plenty of O2 endurance, dedicating only 50 bar to the bottom needlessly wastes usable cylinder capacity; reserve 1/3 + calculated ascent metabolic volume.",
       },
     ],
   },
   {
-    id: "t40_25",
-    level: "Tec 40 CCR",
-    category: "Scrubber Physics",
-    title: "Stirring or 'Resting' Partially Used Sorb ('Myths 3 & 4')",
+    id: "m1_28",
+    level: "Mod 1: Air/EANx",
+    category: "Scrubber Chemistry",
+    title: "Stirring or Air-Drying Partially Used Granular Absorbent",
     depthFt: 0,
     setpoint: 0.7,
     diluent: "21/00",
     cells: ["0.70", "0.70", "0.70"],
-    hudState: "BENCH PREP",
+    hudState: "SURFACE TURNAROUND PREP",
     scenarioText:
-      "After a 90-minute dive, a diver opens their scrubber basket, pours the half-used soda lime into a tub to dry overnight, and plans to stir and repack it the next morning for a 60-minute dive. Why is this potentially fatal?",
+      "After logging 85 minutes on a 180-minute radial scrubber, a diver dumps the absorbent onto a clean tray overnight to evaporate moisture, stirs the white and violet granules evenly, and repacks it for a 60-minute morning dive. Why is this hazardous?",
     options: [
       {
-        label: "A. Used soda lime never 'recovers' overnight, and stirring a partially used bed destroys the distinct chemical reaction front (interface)—mixing exhausted granules throughout the stack and causing immediate CO2 channeling and breakthrough.",
+        label:
+          "Used soda lime never regenerates, and disturbing or stirring a partially reacted bed destroys the uniform chemical reaction front—causing immediate CO2 channeling and early breakthrough.",
         isCorrect: true,
-        feedback: "Correct. Once a partially used scrubber is opened or disturbed, the reaction interface is destroyed and the entire canister MUST be repacked with 100% fresh absorbent.",
+        feedback:
+          "Spot on. Partially used absorbent may only be dived again if kept sealed and undisturbed inside its basket within manufacturer limits; once opened or poured out, discard 100% of it.",
       },
       {
-        label: "B. Stirring used absorbent makes it absorb too much oxygen.",
+        label:
+          "Exposing warm partially reacted calcium carbonate to dry cabin air converts residual sodium hydroxide into carbon monoxide gas that off-gasses on the next pre-breath.",
         isCorrect: false,
-        feedback: "Soda lime does not absorb oxygen; stirring it destroys the CO2 reaction bed and causes channeling.",
+        feedback:
+          "Incorrect. Soda lime does not generate carbon monoxide when exposed to room air; the lethal danger is destroying the active reaction zone geometry and creating low-resistance channels.",
       },
       {
-        label: "C. It is safe as long as the color-indicating dye hasn't turned violet.",
+        label:
+          "Stirring is safe ONLY if fewer than 30% of the ethyl-violet indicator granules have changed color, since dye intensity directly measures remaining hydroxide capacity.",
         isCorrect: false,
-        feedback: "Color-indicating dye fades over time and is never a reliable indicator of remaining scrubber life.",
+        feedback:
+          "Dangerous myth! Indicator dye bleaches back to white over hours in storage or UV light even when the granules are 100% exhausted—never judge sorb life by color.",
+      },
+      {
+        label:
+          "Air-drying removes the 14–19% bound water hydration content inside fresh granules, causing the canister to overheat and melt the Delrin center bore tube underwater.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Over-dried absorbent actually loses chemical reactivity rather than overheating; regardless, dumping and remixing used granules ruins bed integrity.",
       },
     ],
   },
-// =====================================================
-  // TEC 60 CCR SCENARIOS (26 - 38)
+  {
+    id: "m1_29",
+    level: "Mod 1: Air/EANx",
+    category: "Sensor Failure Modes",
+    title: "Aging Sensor Passes Air Check But Caps Out at High PO2",
+    depthFt: 90,
+    setpoint: 1.3,
+    diluent: "21/00",
+    cells: ["1.31", "1.32", "0.94"],
+    hudState: "COL 1: 3 GRN | COL 2: 3 GRN | COL 3: 1 YEL",
+    scenarioText:
+      "An 11-month-old O2 cell read a normal 10.8 mV in ambient air on the boat, yet during your 100% O2 flush it plateaued slightly sluggishly, and now at 90ft on 1.3 SP it refuses to read above 0.94 ata regardless of O2 injection. What failure mode is this?",
+    options: [
+      {
+        label:
+          "The sensor is 'current-limiting' — depleted lead anode surface area can still produce low current at 0.21 ata in air, but hits an electrical ceiling at elevated PO2.",
+        isCorrect: true,
+        feedback:
+          "Critical CCR physics! A current-limited cell looks totally fine in air and can trick divers who skip linearity checks—if two cells current-limit at 0.95 while SP is 1.3, the solenoid runs away!",
+      },
+      {
+        label:
+          "Nitrogen narcosis gas density at 90ft slows oxygen diffusion across Cell 3's hydrophobic membrane by 28%, requiring a recalibration offset for dives deeper than 60ft.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Galvanic O2 sensors respond strictly to oxygen partial pressure independent of inert nitrogen pressure when healthy.",
+      },
+      {
+        label:
+          "Cell 3 has an internal short circuit across its load resistor that multiplies millivolts inversely above 1.0 ata; lower setpoint to 0.90 ata and complete the planned bottom time.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. An internal short drops voltage to 0.0 mV across all pressures, and you must never continue a planned bottom dive after losing sensor agreement—turn the dive immediately.",
+      },
+      {
+        label:
+          "Cold diluent striking Cell 3 from the ADV port has chilled its KOH electrolyte below freezing; close the diluent valve and breathe warm exhaled gas to restore 1.30 ata.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. On the Prism 2, ADV diluent enters the left inhalation counterlung downstream of the head, whereas O2 sensors sit above the warm exothermic scrubber bed.",
+      },
+    ],
+  },
+  {
+    id: "m1_30",
+    level: "Mod 1: Air/EANx",
+    category: "Calibration Physics",
+    title: "Handset Calibrates to 0.96 Instead of 0.98 in Pure O2",
+    depthFt: 0,
+    setpoint: 0.19,
+    diluent: "21/00",
+    cells: ["0.96", "0.96", "0.96"],
+    hudState: "CALIBRATION PASSED — ALL CELLS LINEAR",
+    scenarioText:
+      "At sea level as a low-pressure storm front rolls in, you flow analyzed 99% O2 through your cracked-DSV loop until millivolts hold rock-steady within ±2% of your Air × 4.76 target. Upon hitting Calibrate (FO2 set to 98%), the screen displays 0.96 / 0.96 / 0.96. Why?",
+    options: [
+      {
+        label:
+          "With Altitude set to Auto, the handset multiplies your 0.98 FO2 setting by ambient barometric pressure (~980 mbar ÷ 1013 mbar = 0.96 ata); the calibration is valid.",
+        isCorrect: true,
+        feedback:
+          "Spot on. Partial pressure equals gas fraction × ambient pressure ($PPO_2 = FO_2 \\times P_{amb}$). When barometric pressure is below 1013 mbar (or at altitude), 98% O2 exerts less than 0.98 bar.",
+      },
+      {
+        label:
+          "Residual nitrogen trapped inside the counterlung corners diluted the flush down to 96% O2; repeat the positive pressure test and re-calibrate with the DSV sealed shut.",
+        isCorrect: false,
+        feedback:
+          "Trap! Calibrating with the DSV sealed shut under positive pressure artificially inflates ambient loop pressure above 1.0 bar, making sensors under-read true PPO2 underwater!",
+      },
+      {
+        label:
+          "All three sensors have aged uniformly by 2% since manufacture; open the System Setup menu and raise Calibration FO2 from 98% to 100% until the screen reads 0.98.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Never falsify the Calibration FO2 setting to force a specific display number—the internal pressure transducer is accurately compensating for low barometric pressure.",
+      },
+      {
+        label:
+          "Water vapor saturation inside the freshly packed soda lime bed displaces 0.02 ata of oxygen pressure, indicating your absorbent batch was stored improperly and is damp.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Dry ambient O2 flush gas before pre-breathing has minimal humidity shift, and the Shearwater controller displays barometric-scaled FO2 immediately upon calibration.",
+      },
+    ],
+  },
+  // =====================================================
+  // MOD 2: NORMOXIC TRIMIX CCR SCENARIOS (31 - 45)
   // =====================================================
   {
-    id: "t60_26",
-    level: "Tec 60 CCR",
+    id: "m2_31",
+    level: "Mod 2: Normoxic",
     category: "Zero Sensor Data / Deco",
-    title: "Metabolic Oxygen Replacement (O2 Rebreather Mode) at 20ft",
+    title: "Running Pure Oxygen Metabolic Mode at 20ft With Dead Displays",
     depthFt: 20,
     setpoint: 1.3,
     diluent: "16/40",
     cells: ["FAIL", "FAIL", "FAIL"],
-    hudState: "DARK / NO USEABLE SENSOR DATA",
+    hudState: "ALL DISPLAYS DARK — ZERO SENSOR TELEMETRY",
     scenarioText:
-      "After an electronics/sensor failure with an intact loop and good scrubber, you bailed out to OC and ascended to your 20ft (6m) stop. You have a long decompression remaining and want to conserve offboard gas by returning to the loop in pure O2 Metabolic Replacement Mode. How do you manage the loop at 20ft?",
+      "After total sensor/bus failure with a dry intact loop and fresh scrubber, you bailed out to OC and ascended to your 20ft stop with heavy deco remaining. How do you safely run pure O2 metabolic replacement on the loop at 20ft?",
     options: [
       {
         label:
-          "A. Flush the loop thoroughly with 100% O2, set minimum loop, manually add O2 whenever the counterlung bottoms out, and completely re-flush with O2 every 15 minutes.",
+          "Flush the loop thoroughly with 100% O2, set Minimum Loop, inject O2 manually whenever the counterlung bottoms out, and perform a full O2 re-flush every 15 minutes.",
         isCorrect: true,
         feedback:
-          "Exact Tec 60 CCR protocol. At 20ft (6m) or shallower, 100% O2 cannot exceed 1.6 ata. Because your tissues are off-gassing nitrogen and helium into the loop as you decompress, you must completely re-flush with O2 every 15 minutes (and if the ADV ever triggers).",
+          "Correct. At 20ft (1.6 ata) or shallower, pure O2 cannot exceed 1.60 ata. Full O2 re-flushes every 15 minutes purge nitrogen and helium off-gassing from your tissues into the loop.",
       },
       {
         label:
-          "B. Flush once with diluent and once with O2, then breathe normally without touching the valves until surfacing.",
+          "Begin pure O2 metabolic loop mode at your 30ft stop to conserve deep bailout gas early, adding O2 on every third breath and re-flushing with diluent every 20 minutes.",
         isCorrect: false,
         feedback:
-          "Without replacing metabolized O2 manually, the loop volume will collapse and trigger the ADV (injecting low-O2 diluent at 20ft, risking hypoxia), and off-gassed inert gas will dilute the loop.",
+          "Lethal depth error! At 30ft (1.91 ata), flushing a sensorless loop with 100% O2 exposes you to 1.91 ata PPO2—pure O2 metabolic mode is strictly restricted to 20ft (6m) or shallower.",
       },
       {
         label:
-          "C. Use Metabolic O2 Replacement starting at 50ft (15m) to save even more bailout gas.",
+          "Flush once with 100% O2 at 20ft, leave the left-hand diluent valve open so the ADV prevents loop squeeze, and avoid touching manual valves until clearing your final stop.",
         isCorrect: false,
         feedback:
-          "Fatal error! Pure oxygen at 50ft has a PPO2 of 2.5 ata. Metabolic O2 replacement without working sensors is strictly limited to 20ft (6m) or shallower.",
+          "Incorrect. As metabolism consumes loop volume, leaving the ADV active injects low-O2 bottom diluent at 20ft while tissue off-gassing dilutes FO2—silently driving the blind loop hypoxic.",
+      },
+      {
+        label:
+          "Shut both onboard valves after a single 100% O2 flush at 20ft and rebreathe the fixed volume for 45 minutes, since radial scrubbers absorb off-gassed nitrogen and helium.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Granular absorbent only scrubs CO2, never inert N2 or He, and metabolic consumption will collapse the counterlungs flat within a few minutes unless O2 is manually replaced.",
       },
     ],
   },
   {
-    id: "t60_27",
-    level: "Tec 60 CCR",
+    id: "m2_32",
+    level: "Mod 2: Normoxic",
     category: "Loss of O2 / Gas Extender",
-    title: "Depleted O2 Supply & Offboard-Fed Semiclosed Ascent",
+    title: "Depleted Onboard O2 & Offboard-Fed Semiclosed Ascent",
     depthFt: 140,
     setpoint: 1.3,
     diluent: "16/35",
     cells: ["0.72", "0.71", "0.73"],
-    hudState: "3 YELLOW BLINKS (DROPPING)",
+    hudState: "3 YELLOW BLINKS (O2 SPG AT 0 PSI)",
     scenarioText:
-      "A blown high-pressure O-ring on your right-hand O2 first stage drains your onboard O2 cylinder at 140ft. Your scrubber and electronics are 100% intact, and your low-O2 offboard bailout cylinder (TMx 20/35) has an LP quick-disconnect feed hose. How do you execute a semiclosed ascent?",
+      "A ruptured HP seat O-ring drains your onboard O2 tank at 140ft. Your scrubber and sensors remain 100% functional, and your deep offboard stage (TMx 20/35) has an LP quick-disconnect whip. How do you run a semiclosed ascent?",
     options: [
       {
         label:
-          "A. Plug the offboard LP hose into the loop, wait until loop PPO2 drops to the offboard gas PPO2 at current depth, then cycle 3 breaths in and vent the 4th out your nose—and switch to full OC between 30ft and 20ft.",
+          "Connect the offboard LP whip, wait until loop PPO2 drops to match supply gas PPO2 at depth, cycle 3 breaths in and vent the 4th out your nose, and go full OC by 30–20ft.",
         isCorrect: true,
         feedback:
-          "Spot on. Connecting your low-O2 offboard cylinder gives you ample gas volume and higher O2% than onboard diluent. Wait until loop PPO2 drops to the supply gas PPO2 so you don't waste existing loop O2, flush every 4th breath (more frequently as you shallow), and go to full OC by 30ft–20ft where PPO2 drops rapidly.",
+          "Spot on. Waiting until loop PPO2 meets supply gas PPO2 preserves existing O2, the 4th-breath nose-vent maintains safe steady-state FO2, and switching to OC by 30–20ft prevents shallow hypoxia.",
       },
       {
         label:
-          "B. Immediately vent all gas from the loop at 140ft and stay on semiclosed breathing all the way onto the boat deck.",
+          "Connect the offboard LP whip, flush the entire loop immediately at 140ft to clear residual onboard diluent, vent every 10th breath out your nose, and stay semiclosed to the surface.",
         isCorrect: false,
         feedback:
-          "Venting immediately wastes the 0.72 PPO2 gas already in the loop, and staying on semiclosed breathing in the final 20ft to the surface carries a severe risk of shallow-water hypoxia.",
+          "Dangerous in shallow water! Venting only every 10th breath and staying semiclosed on a 20% O2 mix up to the surface allows metabolic O2 drop to drive inspired PPO2 below 0.16 ata.",
       },
       {
         label:
-          "C. Use semiclosed breathing even if you suspect the scrubber is also channeling.",
+          "Leave your offboard stage disconnected for emergencies and run semiclosed exclusively on your 3-liter onboard 16/35 diluent cylinder all the way through shallow decompression.",
         isCorrect: false,
         feedback:
-          "Never! Semiclosed breathing recycles gas through the canister and is ONLY valid when the loop and scrubber are 100% intact.",
+          "Incorrect. A tiny 3L onboard cylinder carrying 16% O2 lacks both the volume for semiclosed flushing and the oxygen fraction needed to prevent hypoxia at shallow stops.",
+      },
+      {
+        label:
+          "Plumb your hyperoxic EAN50 deco stage into the manual diluent block at 140ft and inject brief pulses manually to mimic a solenoid while keeping your DSV closed.",
+        isCorrect: false,
+        feedback:
+          "Hazardous! Plumbing a toxic high-O2 stage into your diluent feed at 140ft (where EAN50 = 2.62 ata) risks a single accidental flush or stuck button triggering an instant convulsion.",
       },
     ],
   },
   {
-    id: "t60_28",
-    level: "Tec 60 CCR",
-    category: "Team Rescue / NO TOX",
-    title: "Teammate Bails Out onto High-O2 Bottle at 185ft",
+    id: "m2_33",
+    level: "Mod 2: Normoxic",
+    category: "Team Rescue / Wrong Gas",
+    title: "Teammate Bails Out Onto Hyperoxic Deco Stage at 185ft",
     depthFt: 185,
     setpoint: 1.3,
     diluent: "16/40",
     cells: ["1.29", "1.30", "1.31"],
     hudState: "3 GREEN BLINKS (YOUR RIG NORMAL)",
     scenarioText:
-      "At 185ft (56m), your teammate gets a red alarm, bails out off the loop, and deploys an offboard second stage without following the NO TOX procedure. As you move in to perform the 'X' (eXamine) step, you see the regulator hose goes to their high-O2 cylinder labeled 'TMx 50/24 — MAX DEPTH 60FT'. What do you do right now?",
+      "At 185ft, your teammate gets an alarm, bails out off the loop, and begins breathing an offboard regulator without verifying the cylinder. Moving in to cross-check them, you see the hose traces to their 'TMx 50/20 — MOD 70FT' bottle. What is your immediate move?",
     options: [
       {
         label:
-          "A. Tap your teammate, point to the cylinder label, and help them unclip and deploy their own low-O2 regulator.",
-        isCorrect: false,
-        feedback:
-          "Too slow! At 185ft, breathing 50% O2 exposes your teammate to a lethal PPO2 of 3.3+ ata—a CNS convulsion can strike within seconds.",
-      },
-      {
-        label:
-          "B. Immediately deploy and hand your teammate YOUR OWN breathable low-O2 offboard second stage (pulling the toxic reg from their mouth if necessary), then sort out their regulators once they are breathing safe gas.",
+          "Deploy your own known-breathable deep offboard regulator and put it directly to your teammate's mouth (pulling the toxic reg out if required) before sorting out their stages.",
         isCorrect: true,
         feedback:
-          "Exact Tec 60 CCR protocol. At 185ft, 50% O2 is immediately life-threatening. Give them your own known-breathable low-O2 second stage immediately, then sort out their cylinders once they are safe.",
+          "Exact life-saving priority. At 185ft, 50% O2 delivers 3.30 ata PPO2—seconds count before a grand mal CNS seizure strikes. Give them your verified breathable gas first, then untangle gear.",
       },
       {
         label:
-          "C. Signal your teammate to go back onto their CCR loop immediately.",
+          "Flash your primary light urgently, point to the 'MOD 70FT' cylinder band, and assist your teammate in unclipping and opening their own deep bailout regulator.",
         isCorrect: false,
         feedback:
-          "Your teammate bailed out due to a critical loop failure—forcing them back onto a compromised loop is unsafe.",
+          "Too slow! Spending 20–30 seconds communicating with hand signals and opening a stowed valve while your buddy inhales 3.30 ata PPO2 practically guarantees an underwater convulsion.",
+      },
+      {
+        label:
+          "Reach across and shut the valve on their 50% deco cylinder first so they cannot inhale another breath, leaving them to switch back onto their CCR BOV automatically.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Shutting off a panicked diver's air supply at 185ft without simultaneously presenting a breathable second stage can cause them to bolt or inhale from a flooded/toxic loop.",
+      },
+      {
+        label:
+          "Hold onto their harness and ascend rapidly together at 60 ft/min up to 70ft so the 50% mix drops below 1.60 ata before CNS toxicity symptoms manifest.",
+        isCorrect: false,
+        feedback:
+          "Fatal error! Rocket-ascending 115 vertical feet causes extreme arterial gas embolism and fulminant decompression sickness while still exposing them to >2.0 ata O2 on the way up.",
       },
     ],
   },
   {
-    id: "t60_29",
-    level: "Tec 60 CCR",
-    category: "Hypercapnia / Gas Sharing",
-    title: "Delayed Bailout, Rapid Breathing & 50% Cylinder Trade",
+    id: "m2_34",
+    level: "Mod 2: Normoxic",
+    category: "Hypercapnia / Stage Sharing",
+    title: "Delayed Bailout CO2 Debt & Team Bailout Cylinder Trade",
     depthFt: 70,
     setpoint: 1.3,
     diluent: "16/35",
     cells: ["1.30", "1.30", "1.29"],
-    hudState: "TEAMMATE BAILED OUT ON OC",
+    hudState: "TEAMMATE ON OC AT 3x NORMAL SAC",
     scenarioText:
-      "Your teammate had a scrubber channeling issue at depth but fought to stay on the loop with repeated diluent flushes before finally bailing out to OC. Now at 70ft with 35 minutes of deco left, they are breathing heavily at 3x their normal SAC rate and signal they have already used 50% of their bailout cylinder. Why is their breathing still elevated, and what is the team gas-sharing protocol?",
+      "Your teammate tried to 'flush through' scrubber breakthrough at depth before finally bailing out to OC. Now at 70ft with 35 minutes of deco remaining, they are still breathing heavily at 3x normal SAC and signal 50% stage pressure remaining. How do you manage team gas?",
     options: [
       {
         label:
-          "A. Systemic tissue CO2 load takes 30+ minutes to off-gas after delayed bailout. Trade cylinders with your teammate now at 50% remaining—showing the label and passing the 2nd stage first before unclipping and swapping tanks.",
+          "Recognize whole-body tissue CO2 debt takes 30+ minutes to clear; trade stages now at 50% pressure—verifying MOD and passing the 2nd stage first before swapping cylinder clips.",
         isCorrect: true,
         feedback:
-          "Correct. Delaying bailout during a CO2/mushroom valve issue builds a massive tissue CO2 debt that keeps respiration 2x–3x normal for over 30 minutes. Trading cylinders at 50% ensures every diver on the team retains a working offboard bailout.",
+          "Spot on. Delayed bailout saturates slow tissues with dissolved CO2, driving 2–3x ventilation long after switching to OC. Trading tanks at 50% keeps a usable bailout cylinder on every diver.",
       },
       {
         label:
-          "B. Wait until your teammate's cylinder hits 0 psi before passing them your cylinder.",
+          "Let your teammate breathe their current bailout cylinder down to 200 psi first to minimize underwater unclipping tasks, then pass your full cylinder across at the 30ft stop.",
         isCorrect: false,
         feedback:
-          "Letting a bailed-out diver drain a cylinder completely leaves whomever gets that empty cylinder with zero offboard bailout capability.",
+          "Incorrect. Draining one cylinder completely leaves whichever diver holds that empty bottle with zero offboard bailout redundancy if a second CCR failure or separation occurs.",
       },
       {
         label:
-          "C. Have the teammate return to their CCR loop for 5 minutes at 70ft to calm their breathing down.",
+          "Unclip your full bailout tank, clip it onto your teammate's harness first, and have them switch regulators afterward so neither diver has to hold an unclipped bottle.",
         isCorrect: false,
         feedback:
-          "A channeling or breakthrough scrubber is 100% unrecoverable.",
+          "Wrong sequence! Always verify the cylinder MOD label together and establish the diver breathing the new regulator FIRST before unclipping and trading hardware.",
+      },
+      {
+        label:
+          "Have your teammate switch back onto their CCR loop for 5 minutes while resting motionless on the line at 70ft, since resting CO2 production drops enough for spent sorb to recover.",
+        isCorrect: false,
+        feedback:
+          "Never return to a broken-through scrubber! Exhausted or channeled absorbent cannot scrub even resting metabolic CO2 and will spike arterial PCO2 toward unconsciousness.",
       },
     ],
   },
   {
-    id: "t60_30",
-    level: "Tec 60 CCR",
-    category: "Oxygen Toxicity",
-    title: "Tunnel Vision & Facial Twitching on Deco at 30ft",
+    id: "m2_35",
+    level: "Mod 2: Normoxic",
+    category: "Acute Oxygen Toxicity",
+    title: "Prodromal CNS Symptoms (Tinnitus & Cheek Twitch) at 30ft",
     depthFt: 30,
     setpoint: 1.3,
     diluent: "18/35",
     cells: ["1.31", "1.30", "1.32"],
     hudState: "3 GREEN BLINKS",
     scenarioText:
-      "While decompressing at 30ft (9m) after a long deep dive, you experience sudden tunnel vision, ringing in your ears, nausea, and a muscle twitch in your cheek. Which method of lowering your PPO2 is required?",
+      "Ten minutes into a 30ft decompression stop after a long trimix profile, you develop sudden tunnel vision, ringing ears, mild nausea, and a rhythmic twitch under your left eye. What is the fastest, safest way to drop your inspired PO2?",
     options: [
       {
         label:
-          "A. Switch your controller setpoint from 1.3 to 0.7 and let your metabolism gradually lower the loop PPO2.",
-        isCorrect: false,
-        feedback:
-          "Metabolic oxygen consumption is far too slow when active VENTID symptoms are present—a full CNS convulsion can occur while you wait.",
-      },
-      {
-        label:
-          "B. Immediately bail out to your LOWEST oxygen offboard bailout cylinder (using NO TOX), alert your team, and stay at a low PO2 for at least 15 minutes after all symptoms subside.",
+          "Bail out immediately onto your LOWEST-oxygen offboard cylinder after verifying its MOD label, signal your teammate, and hold reduced PO2 for ≥15 minutes past symptom resolution.",
         isCorrect: true,
         feedback:
-          "Correct. Bailing out to your low-O2 offboard gas is the fastest possible way to drop inspired PO2. If you later return to an intact loop, flush with diluent and run a low setpoint (<1.0) for the rest of the dive.",
+          "Correct. Switching to open-circuit on your low-O2 bottom bailout mix (~0.34 ata PO2 at 30ft) drops alveolar PO2 on the very next breath—far faster than flushing or lowering SP on the loop.",
       },
       {
         label:
-          "C. Bail out to your high-O2 deco cylinder (EAN50) to finish decompression faster.",
+          "Switch your handset setpoint from 1.30 down to 0.70 ata immediately and breathe calmly on the loop while metabolic uptake brings your PPO2 down gently without inert spikes.",
         isCorrect: false,
         feedback:
-          "Breathing 50% O2 at 30ft gives you a PPO2 of 0.95 ata—much higher than your low-O2 trimix bailout gas (~0.35 ata at 30ft).",
+          "Dangerous! Metabolic burn takes several minutes to consume high loop O2 at rest—with active facial twitching, a full tonic-clonic convulsion can hit before loop PPO2 drops.",
+      },
+      {
+        label:
+          "Bail out immediately onto your EAN50 deco stage (0.95 ata PO2 at 30ft) so you cut oxygen pressure below 1.0 ata without lengthening your remaining decompression obligation.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. While 0.95 ata is lower than 1.31, your deep trimix bailout stage delivers ~0.34 ata at 30ft, providing a dramatically steeper, safer oxygen drop to halt an impending seizure.",
+      },
+      {
+        label:
+          "Ascend immediately from 30ft up to 15ft to cut ambient hydrostatic pressure by 25%, holding onto the shotline while keeping your mouthpiece locked in closed-circuit mode.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Ascending violates your 30ft decompression ceiling (risking spinal/cerebral DCS), and on a constant-PO2 CCR the solenoid will simply fire to hold 1.30 ata at 15ft anyway!",
       },
     ],
   },
   {
-    id: "t60_31",
-    level: "Tec 60 CCR",
+    id: "m2_36",
+    level: "Mod 2: Normoxic",
     category: "Omitted Decompression",
-    title: "Accidental Blow-Up from 20ft Stop (>1 Min on Surface)",
+    title: "Asymptomatic Blow-Up From 20ft Stop (>1 Minute at Surface)",
     depthFt: 0,
     setpoint: 1.3,
     diluent: "18/35",
     cells: ["0.95", "0.96", "0.95"],
-    hudState: "MISSED DECO STOP ALARM FLASHING RED",
+    hudState: "MISSED DECO STOP ALARM FLASHING",
     scenarioText:
-      "Two minutes into an 8-minute stop at 20ft (6m), a fouled chest strap depresses your drysuit inflator and floats you to the surface. It takes you 2.5 minutes at the surface to unjam the valve. You have zero DCS symptoms, ample gas/scrubber, and re-descend to 20ft where your computer shows 6 min @ 20ft and 12 min @ 15ft. What schedule should you actually follow?",
+      "Two minutes into an 8-minute stop at 20ft, a jammed drysuit inflator floats you to the surface. It takes 2.5 minutes at the surface to unhook the whip. You have zero DCS symptoms, ample gas/sorb, and re-descend to 20ft (computer shows 6m @ 20ft + 12m @ 15ft). What stops do you run?",
     options: [
       {
         label:
-          "A. Follow the exact 6 min @ 20ft and 12 min @ 15ft shown on the screen, then exit.",
-        isCorrect: false,
-        feedback:
-          "Because you were at the surface for MORE than 1 minute, standard omitted-decompression protocol requires multiplying the 20ft and final stops by 1.5x.",
-      },
-      {
-        label:
-          "B. Multiply both the 20ft (6m) stop and final 15ft (5m) stop by 1.5x (9 min @ 20ft + 18 min @ 15ft), plus extend the final stop as much as practicable.",
+          "Multiply both the remaining 20ft stop and final 15ft stop by 1.5× (9 min @ 20ft and 18 min @ 15ft), plus extend the final stop further as gas and scrubber allow.",
         isCorrect: true,
         feedback:
-          "Correct! When surfacing from 20ft (6m) or shallower with no symptoms and taking MORE than 1 minute to return to stop depth, extend both the 20ft stop and final stop by 1.5x normal time, plus extra margin at the last stop.",
+          "Exact omitted-decompression contingency for an asymptomatic surface interval >1 minute (under 5 min) from 20ft or shallower: 1.5× on both the 20ft and final stop.",
       },
       {
         label:
-          "C. Do not re-descend—stay on the boat and drink fluids without oxygen.",
+          "Complete the exact 6 min @ 20ft and 12 min @ 15ft displayed on your wrist handset plus a 1-minute penalty, since ZHL-16C dynamically recalculates surface bubble growth.",
         isCorrect: false,
         feedback:
-          "If you have no symptoms, functional gear, and return promptly, re-descending to complete extended stops prevents symptomatic bubble growth.",
+          "Incorrect. Dissolved-phase Haldane/Bühlmann computers do NOT model free-phase microbubble growth triggered during unscheduled surface pressure drops; manual 1.5× extension is required.",
+      },
+      {
+        label:
+          "Descend past 20ft down to 60ft for 5 minutes at 1.40 setpoint to crush any silent venous bubbles first, then follow the original unadjusted decompression schedule upward.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Re-descending deeper than your missed stop loads additional inert gas without following an established recompression table; return strictly to the missed stop depth.",
+      },
+      {
+        label:
+          "Never re-enter the water once your head breaks the surface during a decompression dive; board the vessel immediately, breathe surface O2, and await helicopter evacuation.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. While symptomatic divers must NEVER re-enter the water, an asymptomatic diver who surfaces briefly from a shallow stop with working gear can prevent DCS via prompt re-immersion.",
       },
     ],
   },
   {
-    id: "t60_32",
-    level: "Tec 60 CCR",
+    id: "m2_37",
+    level: "Mod 2: Normoxic",
     category: "Omitted Decompression",
-    title: "Blow-Up from Deeper Than 20ft (Surface from 50ft Stop)",
+    title: "Asymptomatic Blow-Up From 50ft Deco Stop (<3 Min on Surface)",
     depthFt: 0,
     setpoint: 1.3,
     diluent: "16/35",
     cells: ["0.95", "0.95", "0.96"],
-    hudState: "DECO VIOLATION ALARM",
+    hudState: "CEILING VIOLATION ALARM FLASHING",
     scenarioText:
-      "A runaway wing inflator blows a diver to the surface from their 50ft (15m) deco stop. They disconnect the LP hose at the surface, have zero DCS symptoms, and re-descend to 50ft in under 3 minutes. How do they adjust their remaining stops (50ft, 40ft, 30ft, 20ft, 15ft)?",
+      "A runaway wing inflator pulls a diver to the surface from their 50ft stop. They unplug the LP inflator on the surface, confirm zero neurological or joint symptoms, and drop back to 50ft within 2.5 minutes. How should they modify their remaining 50, 40, 30, 20, and 10ft stops?",
     options: [
       {
         label:
-          "A. Complete the 50ft and 40ft (12m) stops per schedule (or 1.5x on 40ft per newer guidelines), then multiply the 30ft (9m) stop and ALL shallower stops by 1.5x normal deco time, plus extend the final stop as much as practicable.",
+          "Clear the 50ft and 40ft stops per schedule (or 1.5× starting at 40ft), and multiply the 30ft stop and ALL shallower stops (30, 20, 10ft) by 1.5× plus extra final-stop margin.",
         isCorrect: true,
         feedback:
-          "Exact Tec 60 CCR omitted decompression protocol for blow-ups from deeper than 20ft (6m) when asymptomatic.",
+          "Correct. When surfacing asymptomatically from deeper than 20ft and returning promptly (<5 min), extend at minimum the 30ft (9m) and all shallower stops by 1.5× normal duration.",
       },
       {
         label:
-          "B. Only add 1 minute to the 50ft stop and surface normally.",
+          "Double (2.0×) the deep 50ft and 40ft stops where bubble crushing is greatest, then run the 30ft, 20ft, and 10ft stops at standard 1.0× computer durations to limit CNS%.",
         isCorrect: false,
         feedback:
-          "Adding 1 minute only applies to briefly missing a stop underwater without surfacing—surfacing from deeper than 20ft requires extending the 30ft and all shallower stops by 1.5x.",
+          "Backwards! Extending deep stops loads slower compartments with more inert gas while under-treating the high-gradient shallow stops where off-gassing and oxygen window elimination peak.",
       },
       {
         label:
-          "C. Descend back to the max bottom depth of 180ft for 10 minutes.",
+          "Skip the 50ft and 40ft stops completely and hold at 20ft on pure oxygen loop flush for twice the total remaining TTS so nitrogen and helium wash out without adding inert load.",
         isCorrect: false,
         feedback:
-          "Never re-descend to the bottom—return to the missed stop depth.",
+          "Dangerous! Staying at 20ft when you still owe 50ft and 40ft ceiling stops leaves fast/intermediate compartments severely supersaturated, inviting acute spinal DCS.",
+      },
+      {
+        label:
+          "Add a flat 5-minute penalty to the 50ft stop only and surface normally once your Shearwater ceiling clears 0ft, provided loop setpoint is boosted to 1.45 ata.",
+        isCorrect: false,
+        feedback:
+          "Insufficient. A blow-up from 50ft creates significant silent bubble seeds that slow true gas elimination—requiring 1.5× stop extensions across all shallow stops from 30ft upward.",
       },
     ],
   },
   {
-    id: "t60_33",
-    level: "Tec 60 CCR",
-    category: "Underwater DCS Emergency",
-    title: "Joint Pain Developing Underwater at 20ft Deco Stop",
+    id: "m2_38",
+    level: "Mod 2: Normoxic",
+    category: "In-Water DCS Contingency",
+    title: "Onset of Deep Shoulder Pain During 20ft Decompression Stop",
     depthFt: 20,
     setpoint: 1.3,
     diluent: "16/40",
     cells: ["1.30", "1.29", "1.30"],
-    hudState: "3 GREEN BLINKS",
+    hudState: "3 GREEN BLINKS (CNS AT 42%)",
     scenarioText:
-      "While decompressing at 20ft (6m) with 15 minutes remaining, you develop deep, throbbing pain in your left shoulder and elbow (suspected underwater DCS). You have had zero oxygen toxicity symptoms and your CNS% is low. What should you do underwater?",
+      "Ten minutes into a 25-minute stop at 20ft, you develop a deep, dull ache in your left shoulder and elbow consistent with decompression sickness. Your rig is working normally and your CNS clock is at 42%. What is the proper underwater action?",
     options: [
       {
         label:
-          "A. Immediately abort remaining deco and bolt to the surface.",
-        isCorrect: false,
-        feedback:
-          "Surfacing with 15 minutes of uncleared decompression while already symptomatic will cause massive bubble expansion and severe neurological DCS.",
-      },
-      {
-        label:
-          "B. Signal your team ('I think I'm bent'), raise your setpoint to 1.6 ata (since at 20ft/6m pure O2 in the loop cannot exceed 1.6), extend your shallow stops at 20ft/15ft on 100% O2 (with air breaks) as gas/scrubber allow while a teammate alerts the boat to prep emergency O2 and EMS.",
+          "Alert your team (send up an emergency DSMB slate note to prep boat O2/EMS), raise loop PPO2 to 1.60 ata at ≤20ft via pure O2 flush, and extend your shallow stops as gas/sorb allow.",
         isCorrect: true,
         feedback:
-          "Exact Tec 60 CCR protocol. Deeper than 20ft, raise SP to max 1.4; at 20ft (6m) or shallower where Pamb is 1.6 ata, raise SP to 1.6 (100% O2 loop) and extend the shallow stops while surface support prepares evacuation.",
+          "Spot on. At 20ft (1.6 ata ambient) or shallower, flushing with 100% O2 safely maximizes inert gas elimination without exceeding 1.6 ata while surface crew prepares evacuation.",
       },
       {
         label:
-          "C. Lower your setpoint to 0.7 ata so your tissues relax.",
+          "Abort the remaining 15 minutes of 20ft decompression immediately and ascend to the boat deck so you can begin normobaric 100% surface oxygen and oral rehydration faster.",
         isCorrect: false,
         feedback:
-          "Lowering setpoint reduces the oxygen window gradient and worsens bubble growth.",
+          "Never surface early with uncleared decompression stops while already experiencing DCS! Ambient pressure reduction from 1.6 to 1.0 bar expands existing bubbles by 60%.",
+      },
+      {
+        label:
+          "Descend immediately from 20ft back down to 100ft on a 1.60 ata electronic setpoint for 30 minutes to mechanically recompress the shoulder bubble before re-ascending.",
+        isCorrect: false,
+        feedback:
+          "Hazardous! Improvised deep underwater recompression at 100ft on 1.60 SP invites fatal CNS convulsions and traps you with massive new inert gas obligations.",
+      },
+      {
+        label:
+          "Drop your setpoint to 0.70 ata to prevent hyperoxic vasoconstriction in the shoulder joint, massage the painful deltoid vigorously, and finish your scheduled stops.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Lowering PO2 collapses the oxygen window needed to shrink inert gas bubbles, and vigorous joint massage underwater can mobilize venous bubbles.",
       },
     ],
   },
   {
-    id: "t60_34",
-    level: "Tec 60 CCR",
+    id: "m2_39",
+    level: "Mod 2: Normoxic",
     category: "Isobaric Counterdiffusion",
-    title: "Avoiding Isobaric Counterdiffusion (ICD) on Bailout",
-    depthFt: 165,
+    title: "Inert Gas Matching to Prevent Isobaric Counterdiffusion (ICD)",
+    depthFt: 175,
     setpoint: 1.3,
     diluent: "16/40",
     cells: ["1.30", "1.30", "1.30"],
     hudState: "3 GREEN BLINKS",
     scenarioText:
-      "Why does modern Tec 60 CCR gas planning match the Helium-to-Nitrogen ratio of your offboard bailout mixes (e.g., TMx 18/39 and TMx 50/24) to your onboard diluent, and why must you NEVER dive deep on Air/Nitrox diluent and bail out onto a Helium mix?",
+      "Why do technical CCR divers match the Helium-to-Nitrogen proportions of their deep/intermediate offboard bailout cylinders to their onboard diluent, and why must you never dive deep on Air/EANx diluent and bail out onto high-Helium Trimix?",
     options: [
       {
         label:
-          "A. Switching from a slow-diffusing, high-solubility gas (N2) to a fast-diffusing gas (He) at depth causes helium to enter tissues faster than nitrogen leaves—creating supersaturation and inner-ear/skin Isobaric Counterdiffusion (ICD) bubbles even at constant depth.",
+          "Switching from heavy nitrogen-loaded tissues onto a high-helium gas causes fast helium inward diffusion to outpace slow nitrogen washout—creating inner-ear supersaturation bubbles at constant depth.",
         isCorrect: true,
         feedback:
-          "Spot on. Matching the He/N2 ratio across your diluent and offboard bailout cylinders prevents sudden inert gas counterdiffusion gradients and optimizes bailout deco times.",
+          "Exact ICD mechanism. Helium diffuses in rapidly while dissolved nitrogen leaves slowly, summing to local tissue supersaturation and vestibular (inner-ear) hits without any depth change.",
       },
       {
         label:
-          "B. Because helium corrodes open-circuit second stages unless mixed with nitrogen.",
+          "Switching from nitrogen diluent onto helium bailout cools alveolar capillary blood by 4°C instantaneously, causing dissolved nitrogen to precipitate out of plasma via Henry's Law.",
         isCorrect: false,
         feedback:
-          "Helium is completely inert and non-corrosive.",
+          "Incorrect. Cold gas actually increases gas solubility slightly in liquid; ICD is driven by unequal diffusivity and solubility coefficients between N2 and He across tissue membranes.",
       },
       {
         label:
-          "C. Because Shearwater computers cannot calculate EAN50.",
+          "Breathing open-circuit helium after closed-circuit nitrogen reverses osmotic water balance across the pulmonary membrane, causing acute immersion pulmonary edema within five minutes.",
         isCorrect: false,
         feedback:
-          "Shearwater computers calculate any combination of O2, N2, and He.",
+          "Incorrect. Immersion pulmonary edema (IPE) relates to central blood pooling, hypertension, overhydration, and negative inspiratory pressure—not He/N2 counterdiffusion.",
+      },
+      {
+        label:
+          "Matching He/N2 ratios is strictly a dive-computer software requirement because ZHL-16C algorithms crash if helium rises while nitrogen falls in the fast 4-minute compartment.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Bühlmann ZHL-16C tracks pN2 and pHe compartments independently without crashing; the danger is real physiological inner-ear and dermal bubble formation.",
       },
     ],
   },
   {
-    id: "t60_35",
-    level: "Tec 60 CCR",
+    id: "m2_40",
+    level: "Mod 2: Normoxic",
     category: "Descent Physics",
-    title: "Fast Descent PO2 Spike Past 1.55 ata at 150ft",
+    title: "Boyle's Law Compression PPO2 Spike Past 1.56 ata at 150ft",
     depthFt: 150,
     setpoint: 1.3,
-    diluent: "17/35",
+    diluent: "16/40",
     cells: ["1.56", "1.58", "1.55"],
-    hudState: "6 GREEN / RED ALERT",
+    hudState: "6 GREEN / RED HIGH-PO2 ALERT",
     scenarioText:
-      "Chasing a pelagic along a wall to 150ft, you descend rapidly and your HUD flashes an alert: your loop PPO2 has spiked to 1.57 ata because ambient pressure compressed the loop faster than your metabolism consumed oxygen. Your CCR has no mechanical fault. How do you correct it?",
+      "Dropping briskly down a steep wall to 150ft, your handset alerts High PPO2 (1.57 ata across all cells) even though your solenoid hasn't clicked since 90ft. Your onboard 16/40 diluent has a DilPO2 of 0.89 ata at 150ft. What happened and how do you fix it?",
     options: [
       {
         label:
-          "A. Keep descending to 180ft and wait for metabolism to burn off the extra oxygen.",
-        isCorrect: false,
-        feedback:
-          "Descending deeper increases ambient pressure and spikes PPO2 even higher, and waiting for metabolism at 1.57+ ata risks CNS toxicity.",
-      },
-      {
-        label:
-          "B. Pause your descent immediately, perform a diluent flush (since your diluent PO2 is 0.1–0.2 below setpoint at max depth), verify sensor responsiveness and stable setpoint, and only then resume.",
+          "Rapid hydrostatic compression multiplied existing loop FO2 faster than metabolism burned it; level off immediately, flush with diluent to drop PPO2 and verify cells, then resume.",
         isCorrect: true,
         feedback:
-          "Correct. Pausing your descent and flushing with your properly chosen diluent rapidly drops the loop PPO2 back below setpoint while simultaneously verifying that your cells respond at depth.",
+          "Spot on. Because your 16/40 diluent exerts 0.89 ata at 150ft (well below your 1.30 SP), pausing descent and flushing immediately brings loop PPO2 down while proving sensor linearity.",
       },
       {
         label:
-          "C. Close the O2 cylinder valve for the rest of the dive.",
+          "Your right-hand O2 solenoid is leaking mechanically under pressure; shut the O2 cylinder valve immediately, bail out onto open-circuit backgas, and abort the dive.",
         isCorrect: false,
         feedback:
-          "A compression spike is caused by Boyle's Law on descent, not a stuck solenoid—shutting the O2 valve is unnecessary once flushed.",
+          "Unnecessary abort! On any fast descent, compressing a loop that held 1.2–1.3 ata shallower naturally spikes PPO2 via Boyle's Law; if PPO2 holds steady after a diluent flush, nothing is leaking.",
+      },
+      {
+        label:
+          "Continue descending down to 180ft while exhaling forcefully through your nose so the ADV injects fresh 16/40 diluent automatically without slowing down your descent time.",
+        isCorrect: false,
+        feedback:
+          "Dangerous! Descending deeper increases ambient pressure further—pushing 1.57 ata past 1.75+ ata—before you confirm whether the spike was simple compression or a stuck O2 valve.",
+      },
+      {
+        label:
+          "Hold your depth at 150ft without flushing so you conserve onboard trimix diluent, waiting 3–4 minutes for resting metabolic uptake to burn the 1.57 ata spike down to 1.30.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Sitting at 1.57+ ata for several minutes racks up heavy CNS toxicity clock percentage and leaves you exposed if a real O2 leak is actually feeding the loop.",
       },
     ],
   },
   {
-    id: "t60_36",
-    level: "Tec 60 CCR",
-    category: "Offboard Hardware Failure",
-    title: "Blown High-O2 Bailout SPG + Simultaneous CO2 Alarm",
+    id: "m2_41",
+    level: "Mod 2: Normoxic",
+    category: "Compound Equipment Failure",
+    title: "Shut-Down Deco Stage Hose + Subsequent CO2 Breakthrough",
     depthFt: 170,
     setpoint: 1.3,
     diluent: "16/40",
     cells: ["1.30", "1.31", "1.30"],
-    hudState: "CO2 BREAKTHROUGH ALARM",
+    hudState: "ON DEEP OC BAILOUT — DECO REG HAS BLOWN SPG",
     scenarioText:
-      "At 170ft, the SPG hose on your high-O2 deco bailout cylinder (TMx 50/24) ruptures, so you feather/shut its valve down. Moments later, as you start ascending, your CCR scrubber breaks through with high CO2, forcing you onto open-circuit bailout on your low-O2 cylinder (TMx 18/39). You don't have enough volume in the low-O2 bottle alone to finish all shallow stops. What is your best option once you reach 60ft?",
+      "At 170ft, the HP gauge hose on your full TMx 50/20 deco stage ruptures, so you shut its valve before losing much gas. Five minutes later, scrubber breakthrough forces you onto OC bailout on your deep stage (TMx 18/40), which lacks enough volume to finish shallow deco alone. What do you do at 70ft?",
     options: [
       {
         label:
-          "A. Underwater at your 60ft stop, swap the working regulator first stage from your depleted low-O2 cylinder onto your full high-O2 cylinder (or remove/plug the blown SPG port with an emergency tool) so you can breathe the high-O2 gas for shallow deco.",
+          "Stabilize at your 70ft stop and perform an underwater DIN regulator swap—moving the intact regulator assembly from your nearly empty deep stage onto your full 50/20 cylinder.",
         isCorrect: true,
         feedback:
-          "Exact Tec 60 CCR problem-solving procedure (Chapter 2, Exercise 2-6 #7). While the regulator will need a full overhaul after a wet transfer, swapping the working DIN regulator underwater gives you full access to your high-O2 deco gas.",
+          "Great compound problem-solving! Once at 70ft where 18/40 is nearly spent and 50/20 is breathable, wet-swapping the intact DIN 1st stage unlocks your full deco gas supply to finish stops safely.",
       },
       {
         label:
-          "B. Go back onto the CCR loop at 60ft despite the CO2 breakthrough.",
+          "Perform the wet DIN regulator swap immediately on the bottom at 170ft before ascending so you do not have to manage unclipping hardware while hovering in mid-water at 70ft.",
         isCorrect: false,
         feedback:
-          "Never return to a loop with scrubber breakthrough.",
+          "Fatal depth error! Swapping your only working regulator onto a 50% oxygen cylinder at 170ft (3.08 ata PPO2) leaves you with zero breathable gas to get off the bottom.",
       },
       {
         label:
-          "C. Skip all stops shallower than 60ft and surface immediately.",
+          "Crack the valve slightly on the 50/20 cylinder with the ruptured HP hose at 70ft and breathe the second stage between bursts while letting the HP leak bubble continuously.",
         isCorrect: false,
         feedback:
-          "Skipping 60ft-to-surface decompression carries a near-certain risk of severe/fatal DCS when you have a full cylinder of deco gas clipped to your harness.",
+          "Incorrect. Even through an HP pinhole restrictor, continuous venting over 35+ minutes of shallow decompression can drain the stage prematurely when you have a good DIN reg right beside it.",
+      },
+      {
+        label:
+          "Switch back onto your CCR loop at 20ft using pure O2 metabolic replacement mode so you do not have to touch the shut-down 50/20 cylinder.",
+        isCorrect: false,
+        feedback:
+          "Lethal trap! Metabolic O2 replacement mode ONLY works when the scrubber is intact—you bailed out due to CO2 scrubber breakthrough, meaning the loop is permanently unbreathable.",
       },
     ],
   },
   {
-    id: "t60_37",
-    level: "Tec 60 CCR",
-    category: "Decompression Physics",
-    title: "Loop Volume Creeping Up During Long Shallow Deco Stop",
+    id: "m2_42",
+    level: "Mod 2: Normoxic",
+    category: "Decompression Loop Dynamics",
+    title: "Gradual Counterlung Volume Expansion at Constant Deco Depth",
     depthFt: 20,
     setpoint: 1.3,
     diluent: "16/40",
     cells: ["1.30", "1.30", "1.29"],
     hudState: "3 GREEN BLINKS",
     scenarioText:
-      "You have been hovering rock-steady at your 20ft (6m) deco stop for 20 minutes. You haven't touched your manual valves or triggered the ADV, and your PPO2 is holding steady at 1.30—yet you notice your counterlung volume has gradually crept above Minimum Loop, making you slightly buoyant. Where is this extra gas coming from?",
+      "Hovering motionless at your 20ft stop for 20 minutes without touching manual valves or triggering the ADV, your PPO2 holds steady at 1.30—yet your counterlungs steadily swell past Minimum Loop and pull you slightly buoyant. Why is loop gas volume growing?",
     options: [
       {
         label:
-          "A. Dissolved inert gas (nitrogen and helium) diffusing out of your tissues into your lungs and exhaled into the loop, combined with the solenoid adding O2 to keep that growing gas volume at 1.30 setpoint. Vent small amounts via your nose periodically to restore Minimum Loop.",
+          "Dissolved N2 and He off-gassing out of your tissues into your exhaled breath adds inert volume to the loop, diluting FO2 and prompting solenoid O2 pulses; vent out your nose periodically.",
         isCorrect: true,
         feedback:
-          "Spot on (Tec 60 CCR Ch. 1 & 2). During long shallow stops, you off-gas significant inert gas volume from your tissues into the loop, which dilutes loop FO2 and prompts the solenoid to inject additional O2 volume.",
+          "Spot on. During peak shallow off-gassing, your body dumps liters of dissolved inert gas into the closed loop, triggering extra solenoid O2 additions to hold 1.30 ata—gradually inflating the loop.",
       },
       {
         label:
-          "B. Water is leaking into the counterlung and displacing gas.",
+          "Your left-side ADV tilt-valve seat has developed a slow intermediate-pressure creep at shallow ambient pressure; close your diluent tank valve for the duration of the 20ft stop.",
         isCorrect: false,
         feedback:
-          "Water entering the loop makes you negatively buoyant, not positively buoyant.",
+          "Incorrect. Gradual volume gain during long trimix stops is completely normal physiological off-gassing + solenoid makeup; periodically venting via your nose restores Minimum Loop.",
       },
       {
         label:
-          "C. Your scrubber is generating carbon monoxide.",
+          "Exothermic heat peaking inside the radial scrubber bed expands loop gas volume by 25% via Charles's Law during motionless stops; switch to open-circuit for 5 minutes to cool it.",
         isCorrect: false,
         feedback:
-          "Soda lime absorbs CO2 and generates heat and moisture, not gas volume.",
+          "Incorrect. Gas thermal expansion from 20°C to 35°C is only ~5% and stabilizes within minutes—continuous steady volume growth over 20 minutes comes from tissue inert off-gassing + solenoid O2.",
+      },
+      {
+        label:
+          "Exhausting soda lime granules release trapped carbon dioxide gas back into the breathing loop once saturation exceeds 75%; bail out to open-circuit immediately.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Spent soda lime stops absorbing new exhaled CO2 (which matches O2 consumed 1:1 without increasing net volume), it never chemically generates excess gas volume.",
       },
     ],
   },
   {
-    id: "t60_38",
-    level: "Tec 60 CCR",
-    category: "Surface First Aid",
-    title: "Administering Emergency 100% O2 via CCR on the Boat",
+    id: "m2_43",
+    level: "Mod 2: Normoxic",
+    category: "Surface DCI First Aid",
+    title: "Using a CCR as an Emergency ~100% O2 Unit on Deck",
     depthFt: 0,
     setpoint: 1.0,
     diluent: "16/40",
     cells: ["0.96", "0.97", "0.96"],
-    hudState: "SURFACE EMERGENCY O2 MODE",
+    hudState: "SURFACE EMERGENCY OXYGEN MODE",
     scenarioText:
-      "On a remote dive boat, a diver develops DCI symptoms after a dive and the boat's demand O2 kit runs low before the coast guard arrives. How do you configure a CCR to supply continuous ~100% emergency oxygen to a responsive, breathing patient lying on deck?",
+      "During a long run back from an offshore wreck, a responsive diver develops mild skin marbling and joint pain, and the boat's dedicated O2 cylinder runs dry. How can an intact CCR with fresh sorb safely deliver ~100% emergency oxygen on deck?",
     options: [
       {
         label:
-          "A. Close the diluent cylinder valve, empty the loop and flush repeatedly with manual O2 until displays read ≥0.95 PO2, have the patient lie down and breathe with nostrils pinched (no mask/noseclips), monitor PO2/scrubber continuously, and completely re-flush the loop with O2 every 15–20 minutes.",
+          "Shut the diluent valve, flush repeatedly with manual O2 to ≥0.95 PO2, keep the responsive patient supine pinching nostrils (no mask/clips), monitor cells/sorb, and re-flush every 15–20 min.",
         isCorrect: true,
         feedback:
-          "Exact Tec 60 CCR Chapter 3 procedure. Re-flushing the loop every 15–20 minutes is essential because the patient is continuously off-gassing nitrogen/helium from their tissues into the loop.",
+          "Correct emergency improvisation. Closing diluent prevents dilution, avoiding a mask/noseclip lets the mouthpiece drop free if consciousness changes, and 15–20m re-flushes purge off-gassed N2/He.",
       },
       {
         label:
-          "B. Leave the diluent valve open and set the computer to 0.7 setpoint.",
+          "Leave both cylinders open, set the controller to 1.30 setpoint so the solenoid fires continuously on deck, and fit a snug dive mask over the patient's nose to guarantee zero air leaks.",
         isCorrect: false,
         feedback:
-          "Leaving diluent open and running 0.7 SP only gives the patient 70% O2 instead of ~100% O2.",
+          "Dangerous! Setting 1.30 SP at 1.0 bar sea level locks the solenoid firing continuously (draining O2 rapidly and spiking line load), and strapping a mask onto a sick patient risks airway obstruction.",
       },
       {
         label:
-          "C. Strap a full mask and noseclips onto an unresponsive, non-breathing patient.",
+          "Switch the BOV into Open-Circuit mode and connect the green O2 1st stage LP whip directly into the BOV demand port so the patient breathes open-circuit 100% O2 from the 3L tank.",
         isCorrect: false,
         feedback:
-          "A CCR loop should only be used for a responsive patient who can hold the mouthpiece; never put a mask or noseclips on a DCI patient on deck.",
+          "Poor gas conservation and O2-clean hazard! Breathing open-circuit drains a 3L cylinder in ~20 minutes instead of 4+ hours on closed-circuit, and diluent BOV internals aren't oxygen-clean for pure O2.",
+      },
+      {
+        label:
+          "Flush once with 100% O2 on deck, shut both tank valves completely to prevent solenoid over-injection, and let the patient breathe the sealed loop untouched for two hours.",
+        isCorrect: false,
+        feedback:
+          "Fatal error! Shutting the O2 valve while a patient metabolizes oxygen and off-gasses nitrogen into a sealed surface loop will collapse the lungs and drive the loop severely hypoxic within minutes.",
+      },
+    ],
+  },
+  {
+    id: "m2_44",
+    level: "Mod 2: Normoxic",
+    category: "Thermal & Suit Plumbing",
+    title: "Drysuit Inflation Gas Selection on Helium CCR Dives",
+    depthFt: 165,
+    setpoint: 1.3,
+    diluent: "16/45",
+    cells: ["1.30", "1.30", "1.30"],
+    hudState: "3 GREEN BLINKS",
+    scenarioText:
+      "When configuring your Prism 2 for cold-water trimix decompression dives in Barrie/Great Lakes conditions, how should you plumb your drysuit inflation supply and what cross-connection hazard must NEVER occur with Argon?",
+    options: [
+      {
+        label:
+          "Mount a small dedicated Air/Argon suit cylinder completely isolated from loop plumbing—never inflate with high-He diluent (6× heat loss) and never carry Argon where it could feed the loop.",
+        isCorrect: true,
+        feedback:
+          "Spot on. Plumbing drysuit inflation off onboard helium diluent chills you rapidly and drains critical loop/wing reserve, while accidentally plumbing anoxic Argon into a CCR causes instant fatal hypoxia.",
+      },
+      {
+        label:
+          "Tee your drysuit LP whip directly off the right-hand Oxygen 1st stage because oxygen has lower thermal conductivity than air and eliminates mounting an extra pony bottle.",
+        isCorrect: false,
+        feedback:
+          "Extreme fire hazard! Never inject pure oxygen into a drysuit filled with flammable undergarments, lint, skin oils, and static electricity.",
+      },
+      {
+        label:
+          "Plumb your drysuit directly off your left-hand 16/45 trimix diluent 1st stage, since modern trilaminate suits trap radiant heat independent of internal gas thermal conductivity.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Helium conducts body heat roughly 6 times faster than air regardless of shell material, and a stuck suit inflator at 165ft would instantly drain your onboard diluent/BOV supply.",
+      },
+      {
+        label:
+          "Fill your onboard left-hand CCR cylinder with Argon for maximum thermal insulation and rely exclusively on your offboard low-O2 stage whip for loop diluent additions.",
+        isCorrect: false,
+        feedback:
+          "Lethal configuration! Argon is 100% anoxic (0% O2) and roughly twice as narcotic as nitrogen under pressure—it must NEVER be connected to any breathing loop, ADV, or BOV.",
+      },
+    ],
+  },
+  {
+    id: "m2_45",
+    level: "Mod 2: Normoxic",
+    category: "Team Separation",
+    title: "Lost Teammate Protocol in Low-Visibility Cold Water",
+    depthFt: 155,
+    setpoint: 1.2,
+    diluent: "18/35",
+    cells: ["1.20", "1.21", "1.20"],
+    hudState: "2 GREEN BLINKS — ZERO VISUAL ON PARTNER",
+    scenarioText:
+      "Exploring a dark Great Lakes wreck exterior at 155ft in 15ft visibility, you turn from checking your handset and realize your CCR teammate's light beam is gone. Because CCRs emit virtually zero bubble noise or surface trail, what is the standard protocol?",
+    options: [
+      {
+        label:
+          "Hold position and search/shield your own light for maximum 1 minute looking for their beam glow; if not reunited, abort immediately, ascend on schedule, and shoot a DSMB at your first stop.",
+        isCorrect: true,
+        feedback:
+          "Standard technical lost-buddy rule. Briefly cupping your light helps spot a faint partner beam in dark water; after 60 seconds, both divers ascend cleanly on schedule to reunite at deco or surface.",
+      },
+      {
+        label:
+          "Swim a 5-minute expanding circular search around the wreck superstructure while banging your bolt snap, since CCR gas endurance easily supports extended solo searching.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Searching for 5 minutes at 155ft racks up massive unplanned decompression obligation and delays surface rescue response if your partner actually suffered an emergency and ascended.",
+      },
+      {
+        label:
+          "Immediately drop to your backup 0.70 setpoint, dump your wing to hold the bottom, and wait 10 minutes at the wreck bow mooring line in case your buddy backtracks.",
+        isCorrect: false,
+        feedback:
+          "Dangerous! Dropping setpoint to 0.70 at 155ft skyrockets inert gas tissue loading while waiting 10 minutes destroys your bailout gas reserve margins.",
+      },
+      {
+        label:
+          "Ascend at 60 ft/min up to 50ft above the wreck where visibility is clearer to look down for their canister light, then drop back to 155ft if you spot them.",
+        isCorrect: false,
+        feedback:
+          "Never yo-yo ascend 100 vertical feet and re-descend on a technical trimix dive—fast ascents followed by re-compression trap arterialized microbubbles.",
       },
     ],
   },
 
   // =====================================================
-  // TEC 100 CCR EXPEDITION SCENARIOS (39 - 50)
+  // MOD 3: HYPOXIC TRIMIX EXPEDITION SCENARIOS (46 - 60)
   // =====================================================
   {
-    id: "t100_39",
-    level: "Tec 100 CCR",
-    category: "Hypoxic Diluent",
-    title: "Breathing Hypoxic Trimix (10/70) on BOV at the Surface",
-    depthFt: 5,
+    id: "m3_46",
+    level: "Mod 3: Hypoxic",
+    category: "Hypoxic Diluent / BOV",
+    title: "Surface & Shallow Hazard With Onboard Trimix 10/70 on the BOV",
+    depthFt: 6,
     setpoint: 0.7,
     diluent: "10/70",
     cells: ["0.70", "0.71", "0.70"],
-    hudState: "3 YELLOW BLINKS",
+    hudState: "3 YELLOW BLINKS (CHOPPY SURFACE ENTRY)",
     scenarioText:
-      "You are gearing up for a 300ft (90m) expedition dive using hypoxic Trimix 10/70 as your onboard diluent (FO2 = 10%, breathable no shallower than 20ft/6m). During a choppy surface swim to the shotline, why must you NEVER bail out to your onboard BOV or inhale onboard diluent at the surface?",
+      "You are entering rough water for a 300ft dive carrying hypoxic Trimix 10/70 in your left onboard diluent cylinder (10% O2; minimum breathable OC depth 20ft/6m) plumbed directly to your BOV. Why is reflexively bailing out to your BOV near the surface lethal?",
     options: [
       {
         label:
-          "A. At the surface (1.0 ata), Trimix 10/70 has an inspired PO2 of only 0.10 ata—taking 2–3 open-circuit breaths off the BOV flushes your lungs with hypoxic gas and causes immediate shallow-water blackout without warning.",
+          "At 1.0–1.2 bar near the surface, open-circuit 10/70 delivers ~0.10–0.12 ata PO2—two open-circuit breaths off the BOV wash oxygen out of your lungs and trigger instant hypoxic blackout.",
         isCorrect: true,
         feedback:
-          "Critical Tec 100 CCR rule. When diving hypoxic onboard diluent (<16% O2), the BOV is lethal at the surface and in the top 20ft. You must either isolate the BOV at the surface, plumb your BOV to an offboard travel/bailout gas (≥16% O2), or bail out directly to your offboard travel stage.",
+          "Critical Mod 3 rule! Breathing <0.16 ata open-circuit gas strips oxygen *out* of venous blood into your lungs. With hypoxic onboard diluent, plumb the BOV to breathable offboard travel gas or isolate it shallow.",
       },
       {
         label:
-          "B. Because 70% helium causes HPNS at the surface.",
+          "Inhaling 70% helium open-circuit at 6ft causes acute vocal-cord laryngospasm and conductive pulmonary hypothermia within three breaths.",
         isCorrect: false,
         feedback:
-          "HPNS only occurs under extreme ambient pressure (>400ft), never at the surface.",
+          "Incorrect. Helium does not cause laryngospasm; the immediate killer at 6ft is acute anoxia/hypoxia from inhaling 10% oxygen at ~1.18 ata ambient pressure (0.12 ata PO2).",
       },
       {
         label:
-          "C. Because the BOV second stage freezes in warm water with helium.",
+          "It is completely safe to breathe 10/70 open-circuit off the BOV for 3–4 minutes at the surface because residual oxygen stored in muscle myoglobin buffers arterial PO2.",
         isCorrect: false,
         feedback:
-          "The hazard is acute hypoxia (0.10 ata PO2) from breathing 10% oxygen at 1.0 bar ambient pressure.",
+          "Lethal misconception! Unlike breath-holding, actively ventilating open-circuit 0.10 ata gas flushes alveolar O2 below venous blood pressure, causing unconsciousness in as few as 2–4 breaths.",
+      },
+      {
+        label:
+          "Activating the BOV at 6ft back-pressures the left-hand ADV diaphragm, dumping 10/70 into the closed loop and causing all three O2 cells to fail calibration.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Switching the BOV to OC isolates the loop mechanically; the lethal danger is the diver directly inhaling 0.10 ata hypoxic gas from the BOV second stage.",
       },
     ],
   },
   {
-    id: "t100_40",
-    level: "Tec 100 CCR",
-    category: "Gas Density & CO2",
-    title: "Extreme Gas Density & Runaway Work-of-Breathing Spiral at 300ft",
+    id: "m3_47",
+    level: "Mod 3: Hypoxic",
+    category: "Hypoxic Descent Technique",
+    title: "Descending Through the Shallow Zone With Hypoxic 10/70 Diluent",
+    depthFt: 25,
+    setpoint: 0.7,
+    diluent: "10/70",
+    cells: ["0.42", "0.43", "0.41"],
+    hudState: "BOTTOM RED / 6 YELLOW BLINKS — PO2 SAGGING",
+    scenarioText:
+      "Dropping from the surface through 25ft with hypoxic 10/70 onboard diluent feeding your ADV, a diver inhales deeply as counterlungs compress—injecting a huge slug of 10% O2 diluent that drops loop PPO2 to 0.42 ata before hydrostatic pressure catches up. How is this prevented?",
+    options: [
+      {
+        label:
+          "Ensure loop PPO2 starts ≥0.70–1.0 at entry and inject small manual O2 pulses alongside diluent (or feed normoxic offboard travel gas into the loop) through the top 40ft.",
+        isCorrect: true,
+        feedback:
+          "Spot on. Adding hypoxic 10% O2 gas at 10–25ft dilutes loop FO2 faster than modest compression raises pressure—either pre-spike/co-inject O2 manually or plumb normoxic travel gas for shallow descent.",
+      },
+      {
+        label:
+          "Close the left-hand diluent valve completely from the surface down to 60ft and inflate your collapsing counterlungs exclusively with pure 100% manual oxygen.",
+        isCorrect: false,
+        feedback:
+          "Dangerous! Filling collapsing counterlungs solely with 100% O2 down to 60ft (2.82 ata ambient) creates a pure oxygen loop that spikes past 2.5+ ata PPO2!",
+      },
+      {
+        label:
+          "Drop head-first at 100 ft/min with an empty wing so rapid Boyle's Law compression raises 10% oxygen past 0.50 ata before you need to take a single breath.",
+        isCorrect: false,
+        feedback:
+          "Reckless! Blindly rocketing down at 100 ft/min invites ear barotrauma, uncontrolled bottom overshoot, and catastrophic crash landings if equalization stalls at 20ft.",
+      },
+      {
+        label:
+          "Set your primary controller to 1.40 setpoint before leaving the surface so the solenoid fires continuously on deck and masks any hypoxic ADV injection.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Selecting 1.40 SP on the surface cannot exceed 1.0 bar ambient pressure, wastes O2 continuously on deck, and a restricted solenoid still lags behind a massive gulp of 10% ADV gas.",
+      },
+    ],
+  },
+  {
+    id: "m3_48",
+    level: "Mod 3: Hypoxic",
+    category: "Gas Density & WOB",
+    title: "High Gas Density & Runaway Exertion CO2 Spiral at 300ft",
     depthFt: 300,
     setpoint: 1.3,
     diluent: "10/60",
     cells: ["1.30", "1.31", "1.29"],
-    hudState: "3 GREEN BLINKS",
+    hudState: "3 GREEN BLINKS (HEAVY SWIMMING AGAINST CURRENT)",
     scenarioText:
-      "At 300ft (10 bar ambient pressure), a diver encounters a stiff current and swims hard to reach the wreck. Even with helium in the loop, resistive Work of Breathing (WOB) is high due to gas density. Why can heavy exertion at 300ft trigger an unrecoverable hypercapnia spiral even when the scrubber is 100% fresh?",
+      "At 300ft (10.1 bar ambient), a diver fins hard into a current to reach a wreck tie-off. Even with 60% helium, loop gas density approaches ~5.4 g/L. Why can sustained exertion at 300ft trigger fatal CO2 retention even with a brand-new packed scrubber?",
     options: [
       {
         label:
-          "A. Doubling gas flow rate quadruples resistive drag; at high gas density, the respiratory muscles generate CO2 faster than alveolar ventilation can eliminate it, AND dense gas molecules crowd the scrubber bed ('rolloff'), leading to runaway CO2 retention and blackout.",
+          "Turbulent airway/loop resistance rises sharply with gas density so respiratory muscles generate CO2 faster than alveolar ventilation clears it, while dense gas causes scrubber 'roll-off'.",
         isCorrect: true,
         feedback:
-          "Spot on (Tec 40 Ch. 2 & Tec 60 Ch. 2/3). At extreme depth, high gas density simultaneously impairs lung gas exchange, increases muscular CO2 production from breathing effort, and degrades scrubber efficiency. Keep gas density ≤5.2 g/L and never overexert at depth.",
+          "Exact deep physiology! Above ~5.2 g/L, internal human airway flow limiting + respiratory muscle work traps CO2 inside the diver's blood *before* gas even reaches the canister, compounded by bed roll-off.",
       },
       {
         label:
-          "B. Because helium turns into a liquid at 300ft.",
+          "At 10 bar ambient pressure, helium molecules compress soda lime pores shut mechanically, halting chemical hydroxide reactions completely until ascending above 200ft.",
         isCorrect: false,
         feedback:
-          "Helium remains a gas; the danger is gas density (g/L) driving resistive WOB and internal CO2 retention.",
+          "Incorrect. Helium is the smallest, lightest monatomic gas and reduces density compared to nitrogen—the bottleneck is total gas density (g/L) driving internal airway CO2 retention and mass-transfer limits.",
       },
       {
         label:
-          "C. Because the solenoid stops firing below 250ft.",
+          "High hydrostatic pressure forces dissolved nitrogen across the blood-brain barrier to paralyze the medullary breathing center without raising arterial CO2 levels.",
         isCorrect: false,
         feedback:
-          "Type T CCRs are Depth-tested to 330ft (100m); the limit here is human respiratory physiology.",
+          "Incorrect. With 60% helium, loop END is well controlled; the acute danger during deep exertion is hypercapnic CO2 retention leading to panic and hyperoxic/CO2 blackout.",
+      },
+      {
+        label:
+          "Breathing rapidly at 300ft cools the three O2 sensors unevenly, causing the PID controller to starve oxygen down to 0.50 ata while continuing to display 1.30 green.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Rapid breathing actually warms the scrubber bed via exothermic CO2 reaction; sensor readings remain valid while unmonitored arterial CO2 spirals out of control.",
       },
     ],
   },
   {
-    id: "t100_41",
-    level: "Tec 100 CCR",
+    id: "m3_49",
+    level: "Mod 3: Hypoxic",
     category: "HPNS & Compression",
-    title: "High Pressure Nervous Syndrome (HPNS) Tremors on Rapid Descent",
-    depthFt: 330,
-    setpoint: 1.3,
-    diluent: "10/75",
-    cells: ["1.30", "1.30", "1.31"],
-    hudState: "3 GREEN BLINKS",
+    title: "Fine Hand Tremors & Dizziness on Fast Descent Past 320ft",
+    depthFt: 320,
+    setpoint: 1.2,
+    diluent: "10/80",
+    cells: ["1.20", "1.21", "1.20"],
+    hudState: "2 GREEN BLINKS",
     scenarioText:
-      "On a rapid descent past 330ft (100m+) breathing a high-helium diluent (low nitrogen), a diver develops fine hand tremors, myoclonic jerking, dizziness, and nausea despite normal PPO2 and low END. What condition is occurring, and how does gas selection mitigate it?",
+      "After a fast descent to 320ft using a near-heliox 10/80 diluent (very low nitrogen), a diver experiences fine intention tremors in both hands, myoclonic muscle twitches, lightheadedness, and mild nausea despite normal PPO2 and minimal END. What is occurring?",
     options: [
       {
         label:
-          "A. High Pressure Nervous Syndrome (HPNS), caused by rapid hydrostatic compression of the central nervous system. It is mitigated by slowing descent rates and using Trimix (retaining a controlled fraction of nitrogen for its mild narcotic counterbalance) rather than pure Heliox.",
+          "High Pressure Nervous Syndrome (HPNS) from rapid hydrostatic compression of neural membranes; mitigate by slowing deep descent rates and retaining balanced nitrogen in trimix.",
         isCorrect: true,
         feedback:
-          "Exact Tec 60/100 CCR theory (Ch. 1 p. 54). Researchers added nitrogen to heliox (creating trimix) specifically because nitrogen's mild lipid anesthesia counteracts HPNS tremors at extreme depths.",
+          "Spot on. Pure heliox + fast compression hyper-excites CNS neurons (HPNS). Retaining a controlled nitrogen fraction (trimix) uses mild lipid narcosis to counterbalance HPNS tremors.",
       },
       {
         label:
-          "B. Hypothermia from breathing warm loop gas.",
+          "Acute CNS oxygen toxicity prodrome triggered by helium accelerating free-radical lipid peroxidation at 1.20 ata; bail out immediately onto a 10% oxygen open-circuit stage.",
         isCorrect: false,
         feedback:
-          "The scrubber reaction warms loop gas; tremors and jerking on fast deep descents with high helium are classic HPNS.",
+          "Incorrect. Helium does not accelerate CNS oxygen toxicity at 1.20 ata, and bailing out to 10% O2 at 320ft (10.7 bar) still exposes you to 1.07 ata PO2 anyway!",
       },
       {
         label:
-          "C. Oxygen ear squeeze.",
+          "Inner-ear barotrauma from helium diffusing across the round window membrane faster than Eustachian tube equalization; perform a forceful Valsalva maneuver.",
         isCorrect: false,
         feedback:
-          "Oxygen ear occurs hours after a dive when high-FO2 gas is absorbed from the middle ear.",
+          "Incorrect. Bilateral hand tremors and myoclonic jerking without ear pain are classic neurological signs of HPNS, not middle-ear barotrauma.",
+      },
+      {
+        label:
+          "Severe nitrogen narcosis caused by compressed 10% residual nitrogen exerting 3.5 bar narcotic pressure; flush the loop with pure heliox 10/90 to eliminate tremors.",
+        isCorrect: false,
+        feedback:
+          "Backwards! With 10/80 diluent at 320ft, FN2 is tiny (~10%)—flushing to pure 10/90 heliox removes nitrogen's stabilizing counter-effect and actually *worsens* HPNS tremors.",
       },
     ],
   },
   {
-    id: "t100_42",
-    level: "Tec 100 CCR",
-    category: "Multi-Stage Bailout",
-    title: "Staging & Managing 3+ Offboard Bailout Cylinders",
+    id: "m3_50",
+    level: "Mod 3: Hypoxic",
+    category: "Multi-Stage Management",
+    title: "Valve Configuration Across Three Offboard Bailout Stages at 280ft",
     depthFt: 280,
-    setpoint: 1.3,
+    setpoint: 1.2,
     diluent: "10/65",
-    cells: ["1.30", "1.29", "1.30"],
-    hudState: "3 GREEN BLINKS",
+    cells: ["1.20", "1.19", "1.20"],
+    hudState: "2 GREEN BLINKS",
     scenarioText:
-      "On a 280ft dive requiring three offboard bailout cylinders (Deep Bailout TMx 14/55, Intermediate Bailout TMx 35/25, and Shallow Deco EAN50/O2), which cylinder valves should be OPEN and which CLOSED while on the bottom at 280ft?",
+      "Cruising the bottom at 280ft carrying three offboard stages—Deep Bailout (TMx 14/55), Intermediate Travel/Deco (TMx 35/25, MOD 110ft), and Shallow Deco (EAN50 / O2)—which cylinder valves should be OPEN and which CLOSED while at 280ft?",
     options: [
       {
         label:
-          "A. Keep the breathable Deep Bailout cylinder (TMx 14/55) valve OPEN for immediate access, and keep all hyperoxic/deco cylinders that are toxic at current depth CLOSED until ascending to their respective MOD switch depths.",
+          "Keep the breathable Deep Bailout (TMx 14/55) valve OPEN for instant deployment, and keep all toxic shallower cylinders CLOSED with stowed regs until ascending to each MOD.",
         isCorrect: true,
         feedback:
-          "Universal Tec CCR rule (Tec 60 Ch. 1 p. 89): Cylinders containing gas that is breathable at your current depth may be kept open; cylinders with non-breathable (toxic) high-O2 mixes must be kept closed until reaching their switch depth.",
+          "Universal multi-stage CCR standard: any stage breathable at your current ambient depth stays pressurized/open for immediate emergency breaths; any hyperoxic mix stays shut and stowed.",
       },
       {
         label:
-          "B. Keep all three bailout cylinder valves wide open at 280ft to save time later.",
+          "Keep all three offboard cylinder valves wide OPEN from surface to bottom so a single-handed regulator grab works at any depth without wasting time turning valves on ascent.",
         isCorrect: false,
         feedback:
-          "Leaving high-O2 cylinders open at 280ft risks a fatal wrong-gas switch convulsion or losing your deco gas to a unnoticed regulator freeflow.",
+          "Lethal hazard! Open hyperoxic stages at 280ft invite wrong-gas seizures during task-loaded bailouts and risk losing all your shallow deco gas to an unseen silent second-stage leak.",
       },
       {
         label:
-          "C. Keep all three bailout cylinders closed at 280ft.",
+          "Keep all three offboard cylinder valves CLOSED at 280ft to prevent accidental freeflows, relying strictly on your onboard 3-liter BOV until you pause to open a stage.",
         isCorrect: false,
         feedback:
-          "Your primary deep bailout cylinder must be pressurized and open so you can breathe it immediately in a sudden emergency.",
+          "Dangerous at 280ft! At 9.5 bar ambient pressure, a 3-liter onboard diluent cylinder drains in ~60–90 seconds under stressed OC breathing—your primary deep bailout stage must be ready to breathe.",
+      },
+      {
+        label:
+          "Keep TMx 14/55 CLOSED because 14% O2 is hypoxic at the surface, and open TMx 35/25 at 280ft since 35% O2 guarantees immediate oxygenation during a hypoxic loop failure.",
+        isCorrect: false,
+        feedback:
+          "Fatal MOD math! At 280ft (9.48 bar), TMx 14/55 exerts a safe 1.33 ata PO2 (breathable!), whereas TMx 35/25 exerts a lethal 3.32 ata PO2.",
       },
     ],
   },
   {
-    id: "t100_43",
-    level: "Tec 100 CCR",
-    category: "Counterdiffusion / Gas Switches",
-    title: "Sequential Offboard Loop Flushes on Ascent to Accelerate Deco",
-    depthFt: 120,
+    id: "m3_51",
+    level: "Mod 3: Hypoxic",
+    category: "Ascent Gas Strategy",
+    title: "Plumbing & Flushing Intermediate Trimix Into the Loop on Ascent",
+    depthFt: 110,
     setpoint: 1.3,
     diluent: "10/65",
     cells: ["1.30", "1.30", "1.30"],
     hudState: "3 GREEN BLINKS",
     scenarioText:
-      "After a deep dive on Trimix 10/65 diluent, you are ascending through 120ft on an intact CCR loop. Why do expedition CCR divers often plumb in and flush the loop with a less-helium/higher-N2 offboard bailout mix (or normoxic trimix) during intermediate decompression stops?",
+      "Ascending on an intact CCR loop from a 280ft dive on 10/65 onboard diluent, you arrive at 110ft carrying a plumbed-in TMx 35/25 stage (Flush PO2 = 1.52 ata @ 110ft, 1.16 ata @ 75ft). At what depth and why do expedition divers flush intermediate mixes into the loop?",
     options: [
       {
         label:
-          "A. To conserve onboard diluent and optimize the inert gas gradient (tailoring the He/N2 ratio in the loop for shallower stops), while avoiding abrupt full-EANx switches that could trigger Isobaric Counterdiffusion (ICD).",
+          "Wait until ≤75–80ft where 35/25 flush PO2 drops ≤1.20 ata, then flush the loop to shift the He/N2 inert gradient favorably for shallower stops without risking abrupt ICD.",
         isCorrect: true,
         feedback:
-          "Spot on. Plumbing offboard stages into the loop via quick-disconnects lets you flush with intermediate trimix blends on ascent, optimizing off-gassing and conserving onboard gas.",
+          "Spot on! Even though OC MOD for 35% O2 is ~110ft (1.52 ata), flushing it into a CCR loop is delayed until DilPO2 ≤1.20 ata (~75–80ft) so you don't overshoot your 1.30 setpoint while optimizing He washout.",
       },
       {
         label:
-          "B. Because 10/65 diluent cannot be used with a 1.3 setpoint at 120ft.",
+          "Flush the loop aggressively with TMx 35/25 immediately at 110ft because matching open-circuit 1.52 ata MOD maximizes off-gassing without triggering High-PO2 alarms.",
         isCorrect: false,
         feedback:
-          "At 120ft (4.63 ata), the loop FO2 at 1.3 SP is 28% regardless of whether the diluent started at 10% O2—the difference is the He/N2 ratio of the remaining 72% inert fraction.",
+          "Trap! Flushing a CCR loop with a gas whose PO2 is 1.52 ata pushes loop PPO2 well above your 1.30–1.40 setpoint and gives you zero ability to drop PPO2 if a spike occurs.",
       },
       {
         label:
-          "C. To cool the scrubber down.",
+          "Flush pure Air (21/00) directly into the 10/65 loop at 150ft to purge all helium out of the counterlungs early and slash shallow decompression stop times in half.",
         isCorrect: false,
         feedback:
-          "Cooling the scrubber reduces its reaction efficiency; helium actually conducts heat away faster than nitrogen.",
+          "High ICD & narcosis risk! Abruptly dumping 79% nitrogen air over tissues heavily saturated with 65% helium at 150ft spikes both END narcosis and Isobaric Counterdiffusion.",
+      },
+      {
+        label:
+          "Never flush offboard gases into an active CCR loop during ascent because changing inert gas fractions invalidates the SOLO board's galvanic O2 sensor calibration.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Galvanic O2 sensors measure oxygen partial pressure cleanly across trimix/nitrox switches, and Shearwater CC gas switches track tissue loading accurately when updated.",
       },
     ],
   },
   {
-    id: "t100_44",
-    level: "Tec 100 CCR",
-    category: "Oxygen Exposure",
-    title: "Managing Multi-Hour CNS% and OTU Limits with Setpoint Stepping",
-    depthFt: 260,
-    setpoint: 1.1,
+    id: "m3_52",
+    level: "Mod 3: Hypoxic",
+    category: "Oxygen Budget Strategy",
+    title: "Stepped Bottom-to-Deco Setpoint Management on 3-Hour Profiles",
+    depthFt: 270,
+    setpoint: 1.05,
     diluent: "10/65",
-    cells: ["1.10", "1.10", "1.11"],
-    hudState: "1 GREEN BLINK (1.1 ATA)",
+    cells: ["1.05", "1.06", "1.05"],
+    hudState: "ALTERNATING GRN/YEL TO 1 GRN BLINK",
     scenarioText:
-      "On a 260ft dive with a 3-hour total run time, why might you intentionally run a 1.0–1.1 ata setpoint on the bottom and step up to 1.3–1.4 ata only during the shallow decompression stops, plus take 5-minute low-PO2 'air breaks' every 20 minutes on deco?",
+      "On a 270ft dive with a 190-minute runtime, why do expedition divers commonly run a conservative 1.0–1.1 ata bottom setpoint and boost to 1.35–1.40 ata only at ≤80–70ft during decompression (paired with periodic 5-minute low-PO2 breaks)?",
     options: [
       {
         label:
-          "A. At 260ft (8.9 bar), a 0.2 ata change in bottom setpoint makes almost zero difference to the huge inert gas pressure (7.8 vs 7.6 bar), so running 1.1 on the bottom saves significant CNS% and OTU allowance for the shallow deco stops where high PO2 provides the biggest decompression advantage.",
+          "At 270ft (9.2 bar), dropping SP by 0.25 ata barely changes huge inert pressure while lowering CNS/WOB risk, banking CNS% allowance for shallow stops where high PO2 cuts deco sharply.",
         isCorrect: true,
         feedback:
-          "Exact Tec 60/100 CCR oxygen management strategy (Ch. 1 p. 44–45). At extreme depth, 0.2 ata is a tiny fraction of total pressure; at shallow deco stops, raising setpoint dramatically widens the oxygen window.",
+          "Exact deep oxygen optimization. At 9.2 bar, 8.15 vs 7.90 bar inert pressure is negligible (~3%), whereas at 20ft (1.6 bar), boosting from 1.1 to 1.4 cuts inspired inert pressure in half!",
       },
       {
         label:
-          "B. Because oxygen sensors cannot read above 1.1 ata deeper than 200ft.",
+          "Running 1.30 ata at 270ft causes helium to bond chemically with hemoglobin, whereas keeping bottom SP at 1.05 prevents pulmonary OTUs from accumulating below 100ft.",
         isCorrect: false,
         feedback:
-          "Galvanic O2 sensors read partial pressure (ata) up to 2.0+ ata regardless of depth.",
+          "Incorrect. Helium is chemically inert and never binds hemoglobin, and OTUs accumulate anytime inspired PO2 exceeds 0.50 ata regardless of water depth.",
       },
       {
         label:
-          "C. Because running 1.1 on the bottom eliminates all decompression stops.",
+          "You should run the exact opposite profile—1.40 ata on the bottom at 270ft to prevent inert uptake, then drop to 0.90 ata from 70ft upward so bubbles expand slowly.",
         isCorrect: false,
         feedback:
-          "A 260ft dive always requires substantial decompression.",
+          "Dangerous! Running 1.40 ata under heavy gas density/CO2 risk at 270ft invites deep CNS convulsions, while dropping to 0.90 ata on shallow deco balloons TTS and slows inert elimination.",
+      },
+      {
+        label:
+          "Taking 5-minute low-PO2 breaks on a CCR requires opening the DSV and breathing ambient water vapor, making breaks impossible without bailing out to open-circuit air.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Low-PO2 breaks are easily performed either by breathing a low-O2 offboard regulator for 5 minutes or flushing the loop down with low-O2 diluent at 0.70 SP.",
       },
     ],
   },
   {
-    id: "t100_45",
-    level: "Tec 100 CCR",
-    category: "Scrubber Roll-Off",
-    title: "Emergency Scrubber Duration Extension on Delayed Ascent",
+    id: "m3_53",
+    level: "Mod 3: Hypoxic",
+    category: "Scrubber Endurance Limits",
+    title: "Unplanned Entanglement Delay Pushing Rated Scrubber Duration",
     depthFt: 60,
     setpoint: 1.3,
     diluent: "12/55",
     cells: ["1.30", "1.30", "1.30"],
-    hudState: "3 GREEN BLINKS",
+    hudState: "3 GREEN BLINKS — RUNTIME AT RATED SORB LIMIT",
     scenarioText:
-      "An entanglement delay at depth adds 45 minutes of extra decompression, pushing your total run time slightly past your scrubber's rated cold-water duration. Under what strict conditions is it reasonable to stay on the loop as long as safely possible rather than immediately bailing out to OC at 60ft?",
+      "Clearing a fouled line on the bottom delayed your departure by 20 minutes, extending total runtime 25 minutes past your radial scrubber's conservative 4°C rating. Now hovering calmly at 60ft with 40 minutes of deco left, should you automatically bail out to OC right now?",
     options: [
       {
         label:
-          "A. Only in a genuine emergency when your exertion has been low, you are monitoring remaining capacity (and/or CO2 monitor), and you stay hyper-vigilant to bail out to OC immediately at the first sign of CO2 or before reaching <10% estimated capacity—maximizing gas conservation for the team.",
+          "In a genuine unplanned delay with low prior workload and zero CO2 symptoms, stay on the intact loop hyper-vigilantly to preserve offboard bailout reserves, ready to bail instantly.",
         isCorrect: true,
         feedback:
-          "Correct (Tec 60 Ch. 2 p. 123–124). Staying on an intact loop in an unscheduled deco delay conserves your offboard bailout gas as long as exertion was low and zero CO2 symptoms/alarms exist.",
+          "Sound expedition judgment. Factory ratings assume harsh test workloads/temps with safety margin; prematurely dumping onto OC at 60ft could exhaust your stages before clearing 10ft if no CO2 signs exist.",
       },
       {
         label:
-          "B. You can routinely exceed rated scrubber time on planned dives if the water is warm.",
+          "Yes—at the exact minute of rated canister duration, soda lime undergoes instantaneous 100% saturation collapse and releases lethal CO2 on the very next breath.",
         isCorrect: false,
         feedback:
-          "Never plan a dive that exceeds manufacturer scrubber duration limits.",
+          "Incorrect. While you must NEVER *plan* to exceed rated scrubber limits, breakthrough under calm resting deco is progressive rather than a digital timer cliff—conserve OC gas until needed or shallow.",
       },
       {
         label:
-          "C. Wait until you get a severe splitting headache before bailing out.",
+          "Raise your loop setpoint to 1.60 ata at 60ft and skip half of your 20ft and 10ft stops so you surface before exceeding the canister clock by more than 10 minutes.",
         isCorrect: false,
         feedback:
-          "Headache is an unreliable late indicator—by the time a headache hits, breakthrough has already occurred.",
+          "Hazardous! Running 1.60 SP at 60ft invites an underwater seizure, and deliberately omitting 20 minutes of trimix decompression guarantees severe DCS when you still have full OC bailout stages.",
+      },
+      {
+        label:
+          "Perform continuous 10-second diluent flushes every 60 seconds at 60ft so fresh gas blows CO2 out the counterlung OPV without relying on chemical absorption.",
+        isCorrect: false,
+        feedback:
+          "Inefficient! Dumping massive open-circuit-equivalent volumes through the loop every minute drains your diluent/offboard supply without offering the clean safety of open-circuit regulators.",
       },
     ],
   },
   {
-    id: "t100_46",
-    level: "Tec 100 CCR",
-    category: "Emergency Decompression",
-    title: "Flooded Drysuit in 42°F (5°C) Water — Pushing Deco PO2",
+    id: "m3_54",
+    level: "Mod 3: Hypoxic",
+    category: "Severe Thermal Emergency",
+    title: "Catastrophic Drysuit Flood in 40°F Water Approaching Shallow Deco",
     depthFt: 20,
     setpoint: 1.3,
     diluent: "15/45",
     cells: ["1.30", "1.30", "1.29"],
-    hudState: "3 GREEN BLINKS",
+    hudState: "3 GREEN BLINKS — VIOLENT UNCONTROLLABLE SHIVERING",
     scenarioText:
-      "During a deep cold-water wreck dive (42°F / 5°C), a torn wrist seal floods your drysuit. You are shivering violently as you approach your long 20ft (6m) deco stop, and severe hypothermia is becoming a life-threatening risk. What emergency setpoint adjustment is acceptable once you stabilize at 20ft (6m)?",
+      "A ripped neck seal floods your drysuit during a 40°F (4°C) Great Lakes trimix dive. Approaching your 20ft stop with 45 minutes of deco left, violent shivering is progressing toward loss of finger dexterity and mental confusion. What emergency deco adjustment is warranted?",
     options: [
       {
         label:
-          "A. Raise your setpoint to 1.4 ata up to 20ft, and once settled at 20ft (6m) or shallower where pure O2 cannot exceed 1.6 ata, flush the loop with 100% O2 (1.6 ata @ 20ft / 1.5 ata @ 15ft) so your oxygen-monitoring computer accelerates the remaining decompression time.",
+          "Step setpoint to 1.40 ata up to 20ft, then at ≤20ft flush the loop with 100% O2 (1.60 ata @ 20ft / 1.45 ata @ 15ft) so your real-time O2 computer clears accelerated deco cleanly.",
         isCorrect: true,
         feedback:
-          "Exact Tec 60 CCR emergency procedure (Ch. 2 p. 145). When a life-threatening thermal emergency requires getting out of the water as fast as safely possible, raising loop PO2 to 1.6 at 20ft (6m) maximizes the oxygen window without exceeding 1.6 ata.",
+          "Correct life-safety trade-off. When impending severe hypothermia threatens consciousness underwater, maximizing the oxygen window at ≤20ft (where pure O2 cannot exceed 1.6 ata) safely trims exit time.",
       },
       {
         label:
-          "B. Raise your setpoint to 1.6 ata at 90ft.",
+          "Set your primary controller to 1.60 ata starting at 90ft so you maximize decompression acceleration across all intermediate and shallow stops.",
         isCorrect: false,
         feedback:
-          "Never run a 1.6 setpoint on the loop deeper than 20ft (6m) due to loop fluctuations spiking past 1.7+ ata.",
+          "Too dangerous! Shivering and cold stress heighten CNS toxicity susceptibility—running 1.60 ata on a fluctuating loop at 90ft risks fatal deep convulsions.",
       },
       {
         label:
-          "C. Inflate your flooded drysuit with helium diluent to warm up.",
+          "Bail out onto cold open-circuit trimix stages immediately from 60ft upward so expanding regulator gas keeps you alert and prevents shivering-induced loop volume swings.",
         isCorrect: false,
         feedback:
-          "Helium has six times the thermal conductivity of air and will strip body heat even faster.",
+          "Worst possible thermal move! Switching from warm, humid exothermic CCR loop gas onto ice-cold, bone-dry open-circuit expanding gas accelerates core hypothermia dramatically.",
+      },
+      {
+        label:
+          "Add +20% extra hang time to your 20ft and 10ft stops despite losing hand dexterity, because cold peripheral vasoconstriction traps inert gas inside skin tissues.",
+        isCorrect: false,
+        feedback:
+          "While mild cooling normally favors conservative GF High settings, once catastrophic flooding threatens imminent hypothermic incapacitation underwater, getting out safely before blackout takes priority.",
       },
     ],
   },
   {
-    id: "t100_47",
-    level: "Tec 100 CCR",
-    category: "Computer Failure",
-    title: "Violating / Disregarding the More Conservative Backup Computer",
-    depthFt: 40,
+    id: "m3_55",
+    level: "Mod 3: Hypoxic",
+    category: "Computer Discrepancy",
+    title: "Managing Divergent Primary & Backup Computers in a Crisis",
+    depthFt: 30,
     setpoint: 1.3,
     diluent: "16/40",
     cells: ["1.30", "1.30", "1.30"],
-    hudState: "3 GREEN BLINKS",
+    hudState: "PRIMARY TTS: 18 MIN | BACKUP TTS: 29 MIN",
     scenarioText:
-      "Normally, you must follow the most conservative of your two dive computers at every stop. Under what rare emergency circumstance does technical CCR protocol permit disregarding the more conservative computer and following the less conservative oxygen-monitoring computer?",
+      "On normal dives, you clear whichever of your two computers is more conservative. During an emergency bailout ascent where your backup computer stayed locked on a conservative fixed/bailout assumption (29m TTS) while your real-time O2-integrated computer shows 18m TTS and gas is critically tight, what applies?",
     options: [
       {
         label:
-          "A. Only in a life-support emergency (such as bailing out with unexpectedly high gas consumption or a severe thermal failure) where minimizing decompression time is necessary for survival—recognizing the violated computer may lock out for 24–48 hours.",
+          "In a genuine life-support gas or thermal crisis, follow the shorter valid schedule on your real-time O2-monitoring computer to surface with breathing gas, accepting backup lockout.",
         isCorrect: true,
         feedback:
-          "Correct (Tec 60 CCR Ch. 1 p. 87–88). Normally you clear both computers, but in a critical gas/thermal emergency, following the real-time O2-monitoring computer's shorter schedule is an accepted contingency.",
+          "Correct contingency judgment. Running out of breathing gas underwater at 10ft to satisfy a conservative backup model is fatal—follow valid real-time O2 tissue tracking in a true gas emergency.",
       },
       {
         label:
-          "B. Whenever you are hungry or want to beat the other dive teams back to the boat ladder.",
+          "Hold at 30ft until your final bailout stage hits 0 psi trying to clear the 29-minute backup computer, then make a rapid free ascent once the regulator breathes hard.",
         isCorrect: false,
         feedback:
-          "Convenience is never a valid reason to violate a dive computer.",
+          "Never breathe your final cylinder to empty underwater! Surfacing cleanly after clearing your primary ZHL-16C O2-integrated schedule is vastly safer than drowning or bolting at 0 psi.",
       },
       {
         label:
-          "C. Whenever the two computers differ by more than 1 minute.",
+          "Average the two computers mathematically (23.5 minutes) on every routine dive as well as emergencies so neither Shearwater unit ever enters violation mode.",
         isCorrect: false,
         feedback:
-          "Minor variations of a few minutes between two computers are completely normal.",
+          "Incorrect. On normal non-emergency dives you always respect the more conservative unit; averaging violates the conservative computer anyway without resting on coherent tissue math.",
+      },
+      {
+        label:
+          "Reset tissue compartments inside your backup computer menu at 30ft so both screens match 18 minutes before ascending to the boat.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Tissue reset functions are locked out underwater during an active dive and must never be cleared mid-expedition.",
       },
     ],
   },
   {
-    id: "t100_48",
-    level: "Tec 100 CCR",
-    category: "Surface Interval DCS Risk",
-    title: "Post-Dive Strenuous Exertion & Patent Foramen Ovale (PFO)",
+    id: "m3_56",
+    level: "Mod 3: Hypoxic",
+    category: "Post-Dive Physiology",
+    title: "Post-Dive Gear Hauling Strain & Latent Patent Foramen Ovale (PFO)",
     depthFt: 0,
     setpoint: 0.7,
     diluent: "15/45",
     cells: ["0.70", "0.70", "0.70"],
-    hudState: "POST-DIVE SURFACE",
+    hudState: "POST-DIVE BOAT LADDER EXIT",
     scenarioText:
-      "After surfacing from a heavy trimix decompression dive, what is a 'Surface Decompression Stop' on a CCR, and why must you avoid heavy lifting (like hauling twin bailout tanks and CCR rigs up a steep ladder) for several hours after surfacing?",
+      "After surfacing from a heavy trimix profile, why do experienced expedition divers often breathe high-PO2 loop gas calmly for several minutes before exiting and pass off heavy stages rather than climbing a steep ladder fully loaded?",
     options: [
       {
         label:
-          "A. Staying on the loop breathing high oxygen for 5–10+ minutes at the surface before exerting yourself helps clear peak venous gas loads; heavy exertion spikes intrathoracic pressure, which can open a latent Patent Foramen Ovale (PFO) in the heart and shunt venous microbubbles directly into the arterial brain/spinal circulation.",
+          "Heavy lifting and Valsalva strain spike right-atrial chest pressure upon release, which can pop open a latent heart PFO flap and shunt silent venous bubbles directly into brain/spinal arteries.",
         isCorrect: true,
         feedback:
-          "Spot on (Tec 60 CCR Ch. 3 p. 169–170). About 20–30% of adults have a tissue-flap PFO; heavy post-dive strain can pop it open and cause severe neurological DCS.",
+          "Crucial physiology! ~25% of divers have a probe-patent foramen ovale. Venous microbubbles peak 15–60 min post-dive; unclipping heavy stages in the water avoids right-to-left arterial shunting.",
       },
       {
         label:
-          "B. Heavy lifting causes oxygen myopia.",
+          "Climbing a ladder with twin stages compresses femoral veins in the legs, forcing dissolved helium backward into sciatic nerve sheaths via retrograde venous reflux.",
         isCorrect: false,
         feedback:
-          "Oxygen myopia is caused by prolonged hyperoxic exposure to the lens of the eye, not lifting gear.",
+          "Incorrect. Neurological inner-ear, cerebral, and cutis marmorata hits after heavy lifting stem from paradoxical right-to-left cardiac/pulmonary shunting of venous bubbles.",
       },
       {
         label:
-          "C. Breathing high O2 at the surface causes nitrogen narcosis.",
+          "Post-dive exertion raises core body temperature by 1.5°C, causing dissolved oxygen inside arterial blood to boil out into hyperoxic micro-emboli.",
         isCorrect: false,
         feedback:
-          "There is no narcosis at the surface.",
+          "Incorrect. Metabolizable oxygen is rapidly consumed by tissues and does not form persistent post-dive arterial emboli—inert N2 and He venous bubbles shunted across a PFO are the culprit.",
+      },
+      {
+        label:
+          "Hauling a heavy CCR up a boat ladder jars the warm radial soda lime bed, releasing carbon monoxide gas if you take another breath on deck.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Jarring a canister can loosen dust or settle granules for *future* dives, but the physiological danger to the diver climbing loaded after deco is PFO bubble shunting.",
       },
     ],
   },
   {
-    id: "t100_49",
-    level: "Tec 100 CCR",
+    id: "m3_57",
+    level: "Mod 3: Hypoxic",
     category: "Drift Decompression",
-    title: "Leaking or Spilled DSMB / Lift Bag During Blue-Water Drift Deco",
+    title: "Partially Deflated DSMB During Blue-Water Drift Decompression",
     depthFt: 60,
     setpoint: 1.3,
     diluent: "16/40",
     cells: ["1.30", "1.30", "1.30"],
-    hudState: "3 GREEN BLINKS",
+    hudState: "3 GREEN BLINKS — OPEN-WATER DRIFT HANG",
     scenarioText:
-      "While conducting a blue-water drift decompression hang at 60ft under your primary DSMB, the buoy's over-pressure valve leaks partially—leaving it too low in the swell for the boat captain to see, yet still too buoyant to pull back down to 60ft to reinflate. What are the two accepted tec protocols?",
+      "Hanging in mid-water at 60ft under your primary DSMB during an offshore drift deco, you notice the buoy's duckbill/OPV leaked partially—leaving it lying flat in surface chop, yet still holding too much lift to reel back down to 60ft. What is the proper fix?",
     options: [
       {
         label:
-          "A. Either clip a second DSMB/lift bag onto the existing line and send it up to restore surface buoyancy on a single line, OR deploy a backup DSMB on a separate reel/spool—depending on the pre-agreed regional/team protocol.",
+          "Hold your 60ft ceiling strictly and either clip/send a second inflated DSMB up the existing line as a messenger float or deploy your backup DSMB on a separate spool per team SOP.",
         isCorrect: true,
         feedback:
-          "Correct (Tec 60 CCR Ch. 1 p. 102 & Tec 40 Ch. 3 p. 264). Both methods are taught and valid depending on local drift conditions and line integrity.",
+          "Correct. Never break your deco ceiling for surface gear! Sending a secondary buoy up the taut line (or shooting a second spool) restores high-visibility surface tracking cleanly.",
       },
       {
         label:
-          "B. Ascend from 60ft to the surface to orally inflate the DSMB, then drop back down to 60ft.",
+          "Ascend briefly from 60ft to 25ft where water pressure drops enough for the half-filled DSMB to stand vertical again, then drop back down to 60ft.",
         isCorrect: false,
         feedback:
-          "Never violate a 60ft decompression ceiling to fix a surface marker buoy!",
+          "Never violate a 60ft trimix ceiling to fix a marker buoy! Ascending 35ft above your stop invites immediate bubble formation.",
       },
       {
         label:
-          "C. Cut the DSMB line and drift with no surface marker at all.",
+          "Cut the primary spool line immediately so the flat buoy drifts away, finish 45 minutes of bubble-free CCR deco unmarked, and shoot a fresh buoy only after clearing 10ft.",
         isCorrect: false,
         feedback:
-          "Drifting in open ocean on a bubble-free CCR without a surface marker risks losing contact with the chase boat.",
+          "Dangerous in open water! Unlike open-circuit divers, CCR teams leave zero surface bubble trail—drifting unmarked for 45 minutes in current risks losing the chase boat completely.",
+      },
+      {
+        label:
+          "Tie the spool off to your harness waist D-ring and inflate your wing to pull harder against the line so line tension snaps the surface buoy upright.",
+        isCorrect: false,
+        feedback:
+          "Never clip or tie an active surface line directly to your harness in choppy water, and inflating your wing against a semi-sunken buoy will pull you upward through your ceiling!",
       },
     ],
   },
   {
-    id: "t100_50",
-    level: "Tec 100 CCR",
-    category: "Chronic Hyperoxia",
-    title: "Oxygen Myopia vs. Oxygen Ear After Multi-Day Expedition",
+    id: "m3_58",
+    level: "Mod 3: Hypoxic",
+    category: "Multi-Day Hyperoxia",
+    title: "Progressive Distance Blur vs. Delayed Post-Dive Ear Fullness",
     depthFt: 0,
     setpoint: 0.7,
     diluent: "15/45",
     cells: ["0.70", "0.70", "0.70"],
-    hudState: "EXPEDITION DEBRIEF",
+    hudState: "DAY 5 EXPEDITION MEDICAL CHECK",
     scenarioText:
-      "After five consecutive days of long CCR decompression dives at 1.3 setpoint, Diver A notices distant objects on the horizon look blurry (near-sightedness), while Diver B wakes up 4 hours after the dive with a fullness/squeeze sensation in both ears. What are these two conditions and how are they managed?",
+      "After five consecutive days of 3-hour CCR dives at 1.30–1.40 deco SP, Diver 1 notices boat buoys in the distance look blurry (reading wet notes up close is fine), while Diver 2 wakes up 4 hours post-dive with retracted, aching eardrums. What caused each issue?",
     options: [
       {
         label:
-          "A. Diver A has Oxygen Myopia (lens metabolism shift—discontinue diving until vision reverses; prevent by flushing mask with low-O2 diluent instead of loop gas). Diver B has Oxygen Ear (post-dive absorption of 80%+ loop O2 from the middle ear—equalize periodically after surfacing or exchange middle-ear gas with low-O2 mix at the final stop).",
+          "Diver 1 has hyperoxic lenticular myopia (halt high-PO2 diving; clear masks via nose only when needed or use low-O2 gas); Diver 2 has middle-ear O2 absorption squeeze (equalize post-dive).",
         isCorrect: true,
         feedback:
-          "Exact Tec 60 CCR Chapter 2 diagnosis (p. 127–128). Both are classic CCR hyperoxic effects that every expedition rebreather diver must recognize.",
+          "Classic multi-day CCR expedition physiology! High loop O2 inside the mask/lungs alters crystalline lens refraction (myopia), while >80% O2 trapped in the middle ear absorbs while sleeping.",
       },
       {
         label:
-          "B. Both divers have arterial gas embolisms requiring immediate recompression.",
+          "Both divers are suffering subacute cerebral and vestibular arterial gas embolisms requiring immediate chamber recompression on Treatment Table 6.",
         isCorrect: false,
         feedback:
-          "Gradual progressive myopia over multi-day high-O2 exposure and delayed middle-ear oxygen absorption squeeze are specific non-embolism hyperoxic phenomena.",
+          "Incorrect. Painless symmetrical myopic shift after multi-day high OTU loads and delayed bilateral middle-ear negative squeeze hours after sleep are specific hyperoxic effects, not AGE.",
       },
       {
         label:
-          "C. Diver A should raise their setpoint to 1.6 on the next dive to clear their vision.",
+          "Diver 1 has scopolamine patch pupil dilation and Diver 2 has external swimmer's otitis; both divers can continue 1.40 SP diving tomorrow using antibiotic ear drops.",
         isCorrect: false,
         feedback:
-          "Continuing to dive at high PO2 worsens oxygen myopia—you must discontinue high-PO2 exposure until it resolves.",
+          "Incorrect. Scopolamine blurs *near* vision (presbyopia-like accommodation loss), whereas hyperoxic lens shift blurs *distant* vision (myopia)—continuing high-PO2 diving worsens it.",
+      },
+      {
+        label:
+          "Diver 1 has corneal helium microbubbles from mask squeeze and Diver 2 has inner-ear ICD; switch both divers to pure oxygen open-circuit deco from 20ft upward.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Pure oxygen at 20ft actually *increases* middle-ear O2 fraction to 100%, making post-dive middle-ear oxygen absorption squeeze even stronger unless air/diluent is equalized before exit.",
+      },
+    ],
+  },
+  {
+    id: "m3_59",
+    level: "Mod 3: Hypoxic",
+    category: "Cold-Water Canister Physics",
+    title: "Helium Thermal Conductivity & Radial Scrubber Cold Derating",
+    depthFt: 260,
+    setpoint: 1.2,
+    diluent: "10/65",
+    cells: ["1.20", "1.20", "1.21"],
+    hudState: "2 GREEN BLINKS (39°F / 4°C DEEP WATER)",
+    scenarioText:
+      "Planning a 260ft dive in 39°F (4°C) Great Lakes water using 65% helium diluent, how does high helium content combined with near-freezing water affect your radial soda lime canister compared to warm-water air diluent diving?",
+    options: [
+      {
+        label:
+          "Helium's 6× higher thermal conductivity strips exothermic reaction heat out through the bucket walls faster, chilling outer granules and requiring strict cold-water duration derating.",
+        isCorrect: true,
+        feedback:
+          "Spot on. Soda lime efficiency plummets when chilled; helium rapidly conducts the bed's active reaction heat into surrounding 4°C water, shortening effective breakthrough time.",
+      },
+      {
+        label:
+          "Helium's tiny atomic radius lowers gas density so dramatically that cold-water scrubber duration increases by 30% beyond the 190-minute 4°C air-diluent rating.",
+        isCorrect: false,
+        feedback:
+          "Dangerous assumption! While helium lowers density compared to air at 260ft, convective/conductive heat stripping in 4°C water still severely limits cold reaction kinetics—never exceed rated 4°C limits.",
+      },
+      {
+        label:
+          "Below 40°F, helium condenses moisture onto the outer radial mesh screen and freezes it solid unless you pre-heat the canister above 120°F on the truck dashboard.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Freshly breathed canister beds stay above freezing internally from metabolic/chemical heat, and baking plastic baskets/O2 sensors at 120°F+ damages cells and dries out sorb.",
+      },
+      {
+        label:
+          "Helium selectively poisons potassium hydroxide catalysts inside 8–12 mesh granules below 200ft, requiring you to pack fine 4–8 mesh industrial hospital lime instead.",
+        isCorrect: false,
+        feedback:
+          "Never use coarse 4–8 mesh hospital lime in a P2 radial basket! Hollis specifies high-grade 8–12 mesh diving absorbent; coarse 4–8 mesh drastically increases channeling and early breakthrough.",
+      },
+    ],
+  },
+  {
+    id: "m3_60",
+    level: "Mod 3: Hypoxic",
+    category: "Bailout Regulator Freeze",
+    title: "Freeflowing Deep Offboard Bailout Stage During Cold Ascent",
+    depthFt: 150,
+    setpoint: 1.3,
+    diluent: "12/55",
+    cells: ["FAIL", "FAIL", "FAIL"],
+    hudState: "ON OC BAILOUT — DEEP STAGE ICING & FREEFLOWING",
+    scenarioText:
+      "After bailing out off a flooded CCR in 40°F water, heavy breathing at 150ft freezes your deep offboard stage (TMx 16/45) into a violent freeflow. Your next stage (TMx 50/20) is toxic until 70ft. How do you survive the 150ft-to-70ft ascent?",
+    options: [
+      {
+        label:
+          "Sip from the edges of the freeflowing mouthpiece without sealing your lips while feathering the stage cylinder valve back-and-forth (or sharing a buddy's deep stage) up to 70ft.",
+        isCorrect: true,
+        feedback:
+          "Exact cold-water bailout survival skill! Never seal lips on a freeflow (barotrauma) and never open a 50% deco bottle at 150ft; feathering the frozen tank valve conserves enough gas to reach 70ft or your teammate.",
+      },
+      {
+        label:
+          "Shut the frozen 16/45 cylinder completely and switch onto your TMx 50/20 regulator for shallow sips while ascending fast, holding your breath between sips to lower average PO2.",
+        isCorrect: false,
+        feedback:
+          "Double fatality trap! Breathing 50% O2 at 150ft delivers 2.77 ata PO2 (seizure), and breath-holding while ascending on open-circuit causes catastrophic pulmonary barotrauma / AGE.",
+      },
+      {
+        label:
+          "Seal your lips tightly around the freeflowing second stage and route the excess gas through your nose into your mask so your drysuit hood warms the frozen first stage.",
+        isCorrect: false,
+        feedback:
+          "Never seal your mouth tightly around a violently freeflowing second stage—140 psi intermediate pressure can rupture alveoli in an instant!",
+      },
+      {
+        label:
+          "Close the frozen offboard stage and switch back onto your flooded closed-circuit loop in manual mode until reaching 70ft, blowing caustic water out between breaths.",
+        isCorrect: false,
+        feedback:
+          "Incorrect. Returning to a flooded soda lime canister at 150ft delivers an unbreathable caustic cocktail into your lungs when feathering your stage or sharing with your teammate is immediately available.",
       },
     ],
   },

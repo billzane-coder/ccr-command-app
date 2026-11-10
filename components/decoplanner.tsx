@@ -19,17 +19,28 @@ import {
   Settings,
   Package,
   Eye,
+  RotateCcw,
 } from "lucide-react";
 import {
   GasMix,
-  MultiDecoSettings,
+  depthFtToBar,
   evaluateDiluentAtDepth,
   runDecoSimulation,
 } from "../lib/decoEngine";
 
+interface PlannerEngineSettings {
+  lastStopDepthFt: 10 | 15 | 20;
+  descentRateFtMin: number;
+  ascentRateFtMin: number;
+  ocProblemTimeMin: number;
+  o2Narcotic: boolean;
+  targetEndFt: number;
+}
+
 interface ExtendedGasMix extends GasMix {
   maxPo2Limit: number;
   ccrSwitchDepthFt: number;
+  roleTag?: string;
 }
 
 interface FavoritePlan {
@@ -38,6 +49,7 @@ interface FavoritePlan {
   bottomDepthFt: number;
   bottomTimeMin: number;
   setpoint: number;
+  autoMatchDiluent?: boolean;
   useDecoSpBoost: boolean;
   decoSetpoint: number;
   decoSpSwitchDepthFt: number;
@@ -48,7 +60,7 @@ interface FavoritePlan {
   workingSac: number;
   decoSac: number;
   includeReserve: boolean;
-  settings: MultiDecoSettings;
+  settings: PlannerEngineSettings;
   gases: ExtendedGasMix[];
 }
 
@@ -59,6 +71,76 @@ interface TelemetrySample {
   cell2: number;
   cell3: number;
   setpoint: number;
+}
+
+/**
+ * Controlled decimal/integer input that allows clearing the box completely empty
+ * without snapping back to a leading "0" while typing.
+ */
+function NumericInput({
+  value,
+  onChange,
+  min,
+  max,
+  className,
+  placeholder,
+}: {
+  value: number;
+  onChange: (val: number) => void;
+  min?: number;
+  max?: number;
+  className?: string;
+  placeholder?: string;
+}) {
+  const [raw, setRaw] = useState<string>(String(value));
+  const [focused, setFocused] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!focused) {
+      setRaw(String(value));
+    }
+  }, [value, focused]);
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      placeholder={placeholder}
+      value={focused ? raw : String(value)}
+      onFocus={(e) => {
+        setFocused(true);
+        setRaw(String(value));
+        e.currentTarget.select();
+      }}
+      onChange={(e) => {
+        const next = e.target.value.trim();
+        if (!/^\d*\.?\d*$/.test(next)) return;
+        setRaw(next);
+        if (next !== "" && next !== ".") {
+          const parsed = parseFloat(next);
+          if (!Number.isNaN(parsed)) {
+            onChange(parsed);
+          }
+        }
+      }}
+      onBlur={() => {
+        setFocused(false);
+        if (raw === "" || raw === ".") {
+          const fallback = min !== undefined ? min : 0;
+          onChange(fallback);
+          setRaw(String(fallback));
+        } else {
+          let parsed = parseFloat(raw);
+          if (Number.isNaN(parsed)) parsed = min !== undefined ? min : 0;
+          if (min !== undefined && parsed < min) parsed = min;
+          if (max !== undefined && parsed > max) parsed = max;
+          onChange(parsed);
+          setRaw(String(parsed));
+        }
+      }}
+      className={className}
+    />
+  );
 }
 
 const DEFAULT_LOCKER_TANKS: ExtendedGasMix[] = [
@@ -82,7 +164,7 @@ const DEFAULT_LOCKER_TANKS: ExtendedGasMix[] = [
     he: 0,
     n2: 68,
     maxPo2Limit: 1.4,
-    switchDepthFt: 110,
+    switchDepthFt: 100,
     ccrSwitchDepthFt: 90,
     tankSizeCuFt: 80,
     workingPsi: 3000,
@@ -122,10 +204,83 @@ function calcModFt(o2Pct: number, maxPo2: number): number {
   return Math.max(10, Math.floor(rawFt / 10) * 10);
 }
 
+/**
+ * Calculates optimal CCR onboard diluent (O2% & He%) for a given depth & bottom setpoint:
+ * - Keeps Diluent Flush PO2 <= min(1.10, Setpoint - 0.15) (capped at 21% O2 for standard air range)
+ * - Sizes Helium in 5% steps to hold CCR Loop END <= targetEndFt AND Loop Gas Density <= 5.2 g/L
+ */
+function calculateOptimalDiluent(
+  depthFt: number,
+  bottomSp: number,
+  targetEndFt: number,
+  o2Narcotic: boolean
+): { o2: number; he: number } {
+  const safeDepth = Math.max(10, depthFt);
+  const ambBar = depthFtToBar(safeDepth);
+  const maxFlushPo2 = Math.min(1.1, Math.max(0.65, bottomSp - 0.15));
+
+  let o2 = 21;
+  if (0.21 * ambBar > maxFlushPo2) {
+    o2 = Math.max(8, Math.min(21, Math.floor((maxFlushPo2 / ambBar) * 100)));
+  }
+
+  const actualLoopPo2 = Math.min(ambBar, bottomSp);
+  const loopFO2 = actualLoopPo2 / ambBar;
+  const fO2 = o2 / 100;
+
+  let he = 0;
+  if (safeDepth > targetEndFt) {
+    let reqLoopFHe = 0;
+    if (o2Narcotic) {
+      reqLoopFHe = Math.max(0, 1 - (targetEndFt + 33) / (safeDepth + 33));
+    } else {
+      const maxLoopFN2 = 0.79 * ((targetEndFt + 33) / (safeDepth + 33));
+      reqLoopFHe = Math.max(0, 1 - loopFO2 - maxLoopFN2);
+    }
+    const rawDilFHe =
+      1 - loopFO2 > 0.01 ? (reqLoopFHe / (1 - loopFO2)) * (1 - fO2) : 0;
+    he = Math.ceil((rawDilFHe * 100) / 5) * 5;
+  }
+
+  // Step Helium up in 5% increments if loop gas density exceeds 5.2 g/L
+  while (he < 100 - o2) {
+    const fHe = he / 100;
+    const fN2 = Math.max(0, 1 - fO2 - fHe);
+    const heRatio = fHe + fN2 > 0 ? fHe / (fHe + fN2) : 0;
+    const loopFHe = (1 - loopFO2) * heRatio;
+    const loopFN2 = Math.max(0, 1 - loopFO2 - loopFHe);
+    const density =
+      (loopFHe * 0.18 + loopFN2 * 1.25 + loopFO2 * 1.43) * ambBar;
+    if (density <= 5.2) break;
+    he += 5;
+  }
+
+  he = Math.min(100 - o2, Math.max(0, he));
+  return { o2, he };
+}
+
+function pickSmartCylinderSpec(requiredCuFt: number): {
+  tankSizeCuFt: number;
+  workingPsi: number;
+  cylLabel: string;
+} {
+  if (requiredCuFt <= 36) {
+    return { tankSizeCuFt: 40, workingPsi: 3000, cylLabel: "AL40" };
+  }
+  if (requiredCuFt <= 78) {
+    return { tankSizeCuFt: 80, workingPsi: 3000, cylLabel: "AL80" };
+  }
+  if (requiredCuFt <= 105) {
+    return { tankSizeCuFt: 108, workingPsi: 3000, cylLabel: "LP108" };
+  }
+  return { tankSizeCuFt: 160, workingPsi: 3000, cylLabel: "2× AL80" };
+}
+
 export default function DecoPlanner() {
   const [subTab, setSubTab] = useState<"planner" | "compare">("planner");
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
   const [showTankLocker, setShowTankLocker] = useState<boolean>(false);
+  const [recMixStyle, setRecMixStyle] = useState<"matched" | "shop">("matched");
 
   // Toast / Status Feedback Banner
   const [statusToast, setStatusToast] = useState<string | null>(null);
@@ -134,13 +289,14 @@ export default function DecoPlanner() {
     setTimeout(() => setStatusToast(null), 3200);
   };
 
-  // MultiDeco Suite Settings State
-  const [settings, setSettings] = useState<MultiDecoSettings>({
+  // Planner Engine Settings State
+  const [settings, setSettings] = useState<PlannerEngineSettings>({
     lastStopDepthFt: 10,
     descentRateFtMin: 60,
     ascentRateFtMin: 30,
     ocProblemTimeMin: 3,
     o2Narcotic: true,
+    targetEndFt: 100,
   });
 
   // Dive Profile Inputs
@@ -148,15 +304,18 @@ export default function DecoPlanner() {
   const [bottomTimeMin, setBottomTimeMin] = useState<number>(25);
   const [setpoint, setSetpoint] = useState<number>(1.2);
 
+  // Auto-Match Onboard Diluent to Depth & Bottom PO2
+  const [autoMatchDiluent, setAutoMatchDiluent] = useState<boolean>(true);
+  const [dilO2, setDilO2] = useState<number>(18);
+  const [dilHe, setDilHe] = useState<number>(30);
+
+  const [gfLow, setGfLow] = useState<number>(30);
+  const [gfHigh, setGfHigh] = useState<number>(85);
+
   // Stepped Ascent / Deco Setpoint Boost State
   const [useDecoSpBoost, setUseDecoSpBoost] = useState<boolean>(true);
   const [decoSetpoint, setDecoSetpoint] = useState<number>(1.4);
   const [decoSpSwitchDepthFt, setDecoSpSwitchDepthFt] = useState<number>(80);
-
-  const [gfLow, setGfLow] = useState<number>(30);
-  const [gfHigh, setGfHigh] = useState<number>(85);
-  const [dilO2, setDilO2] = useState<number>(16);
-  const [dilHe, setDilHe] = useState<number>(35);
 
   // SAC / RMV & Reserve Settings
   const [workingSac, setWorkingSac] = useState<number>(0.65);
@@ -170,23 +329,23 @@ export default function DecoPlanner() {
   const [gases, setGases] = useState<ExtendedGasMix[]>([
     {
       id: "g1",
-      name: "TMx 18/34",
+      name: "TMx 18/30",
       o2: 18,
-      he: 34,
-      n2: 48,
+      he: 30,
+      n2: 52,
       maxPo2Limit: 1.4,
       switchDepthFt: 220,
-      ccrSwitchDepthFt: 80,
+      ccrSwitchDepthFt: 90,
       tankSizeCuFt: 80,
       workingPsi: 3000,
       isUsedAsDiluentOnAscent: true,
     },
     {
       id: "g2",
-      name: "TMx 50/21",
+      name: "EAN50",
       o2: 50,
-      he: 21,
-      n2: 29,
+      he: 0,
+      n2: 50,
       maxPo2Limit: 1.6,
       switchDepthFt: 70,
       ccrSwitchDepthFt: 40,
@@ -232,7 +391,7 @@ export default function DecoPlanner() {
   const [actualSamples, setActualSamples] = useState<TelemetrySample[]>([]);
   const [logName, setLogName] = useState<string>("");
 
-  // Load saved Favorites, Tank Locker, and MultiDeco Settings from localStorage
+  // Load saved Favorites, Tank Locker, and Planner Defaults from localStorage
   useEffect(() => {
     try {
       const savedFavs = localStorage.getItem("p2_deco_favorites_v3");
@@ -241,24 +400,43 @@ export default function DecoPlanner() {
       const savedLocker = localStorage.getItem("p2_tank_locker_v1");
       if (savedLocker) setTankLocker(JSON.parse(savedLocker));
 
-      const savedDefaults = localStorage.getItem("p2_multideco_defaults_v1");
+      const savedDefaults = localStorage.getItem("p2_planner_defaults_v2");
       if (savedDefaults) {
         const d = JSON.parse(savedDefaults);
-        if (d.settings) setSettings(d.settings);
-        if (d.gfLow) setGfLow(d.gfLow);
-        if (d.gfHigh) setGfHigh(d.gfHigh);
-        if (d.workingSac) setWorkingSac(d.workingSac);
-        if (d.decoSac) setDecoSac(d.decoSac);
-        if (d.setpoint) setSetpoint(d.setpoint);
+        if (d.settings) setSettings((prev) => ({ ...prev, ...d.settings }));
+        if (d.gfLow !== undefined) setGfLow(d.gfLow);
+        if (d.gfHigh !== undefined) setGfHigh(d.gfHigh);
+        if (d.workingSac !== undefined) setWorkingSac(d.workingSac);
+        if (d.decoSac !== undefined) setDecoSac(d.decoSac);
+        if (d.setpoint !== undefined) setSetpoint(d.setpoint);
       }
     } catch (e) {
       console.error(e);
     }
   }, []);
 
+  // Auto-populate Diluent O2% and He% whenever Depth, Bottom SP, or Target END changes
+  useEffect(() => {
+    if (!autoMatchDiluent) return;
+    const optimal = calculateOptimalDiluent(
+      bottomDepthFt,
+      setpoint,
+      settings.targetEndFt,
+      settings.o2Narcotic
+    );
+    setDilO2(optimal.o2);
+    setDilHe(optimal.he);
+  }, [
+    autoMatchDiluent,
+    bottomDepthFt,
+    setpoint,
+    settings.targetEndFt,
+    settings.o2Narcotic,
+  ]);
+
   const saveDefaultsToStorage = () => {
     localStorage.setItem(
-      "p2_multideco_defaults_v1",
+      "p2_planner_defaults_v2",
       JSON.stringify({
         settings,
         gfLow,
@@ -268,7 +446,7 @@ export default function DecoPlanner() {
         setpoint,
       })
     );
-    triggerToast("Saved MultiDeco Settings & GF/SAC as App Defaults ✓");
+    triggerToast("Saved Planner Settings, GFs & SAC as App Defaults ✓");
     setShowSettingsModal(false);
   };
 
@@ -282,7 +460,6 @@ export default function DecoPlanner() {
     localStorage.setItem("p2_tank_locker_v1", JSON.stringify(updated));
   };
 
-  // Auto-calculate MOD & CCR Flush Depth whenever O2% or Max PO2 changes
   const handleFormO2orPo2Change = (newO2: number, newMaxPo2: number) => {
     setFormO2(newO2);
     setFormMaxPo2(newMaxPo2);
@@ -364,7 +541,7 @@ export default function DecoPlanner() {
     const clone: ExtendedGasMix = {
       ...lck,
       id: "gas_" + Date.now() + Math.random().toString(36).slice(2, 5),
-      name: lck.name.replace(/\s*\(\d+cf\)/i, ""),
+      name: lck.name.replace(/\s*\([^)]+\)/g, "").trim(),
     };
     setGases([...gases, clone]);
     triggerToast(`Deployed ${clone.name} from Tank Locker ✓`);
@@ -372,32 +549,6 @@ export default function DecoPlanner() {
 
   const removeTankFromLocker = (id: string) => {
     saveLockerToStorage(tankLocker.filter((t) => t.id !== id));
-  };
-
-  const addSuggestedMix = (mixStr: string, isLowO2: boolean) => {
-    const nums = mixStr.replace("TMx", "").trim().split("/");
-    const o2 = parseInt(nums[0], 10) || (isLowO2 ? 18 : 50);
-    const he = parseInt(nums[1], 10) || 0;
-    const n2 = Math.max(0, 100 - o2 - he);
-    const po2Lim = isLowO2 ? 1.4 : 1.6;
-    const modFt = calcModFt(o2, po2Lim);
-    const ccrModFt = isLowO2 ? 80 : calcModFt(o2, 1.2);
-
-    const newGas: ExtendedGasMix = {
-      id: "sug_" + Date.now() + Math.random().toString(36).slice(2, 5),
-      name: he > 0 ? `TMx ${o2}/${he}` : `EAN${o2}`,
-      o2,
-      he,
-      n2,
-      maxPo2Limit: po2Lim,
-      switchDepthFt: modFt,
-      ccrSwitchDepthFt: ccrModFt,
-      tankSizeCuFt: 80,
-      workingPsi: 3000,
-      isUsedAsDiluentOnAscent: isLowO2,
-    };
-    setGases([...gases, newGas]);
-    triggerToast(`Added Suggested ${newGas.name} (MOD ${modFt}ft) ✓`);
   };
 
   const toggleGasDiluentAscent = (id: string) => {
@@ -421,7 +572,7 @@ export default function DecoPlanner() {
     setGases(gases.filter((g) => g.id !== id));
   };
 
-  // Save & Load Favorite Plans with Feedback Toast
+  // Save & Load Favorite Plans
   const saveCurrentAsFavorite = () => {
     const title =
       favName.trim() ||
@@ -432,6 +583,7 @@ export default function DecoPlanner() {
       bottomDepthFt,
       bottomTimeMin,
       setpoint,
+      autoMatchDiluent,
       useDecoSpBoost,
       decoSetpoint,
       decoSpSwitchDepthFt,
@@ -456,6 +608,7 @@ export default function DecoPlanner() {
     setSelectedFavId(id);
     const fav = favorites.find((f) => f.id === id);
     if (!fav) return;
+    setAutoMatchDiluent(fav.autoMatchDiluent ?? false);
     setBottomDepthFt(fav.bottomDepthFt);
     setBottomTimeMin(fav.bottomTimeMin);
     setSetpoint(fav.setpoint);
@@ -469,7 +622,7 @@ export default function DecoPlanner() {
     setWorkingSac(fav.workingSac);
     setDecoSac(fav.decoSac);
     setIncludeThirdsReserve(fav.includeReserve);
-    if (fav.settings) setSettings(fav.settings);
+    if (fav.settings) setSettings((prev) => ({ ...prev, ...fav.settings }));
     setGases(fav.gases);
     setEditingGasId(null);
     triggerToast(`Loaded Saved Plan: "${fav.name}" ✓`);
@@ -483,17 +636,20 @@ export default function DecoPlanner() {
     if (target) triggerToast(`Removed Plan: "${target.name}"`);
   };
 
+  const safeDepthFt = Math.max(10, bottomDepthFt);
+  const safeBottomMin = Math.max(1, bottomTimeMin);
+
   // 1. Evaluate Diluent Physics at Bottom Depth
   const dilEval = useMemo(
     () =>
       evaluateDiluentAtDepth(
-        bottomDepthFt,
+        safeDepthFt,
         dilO2,
         dilHe,
         setpoint,
         settings.o2Narcotic
       ),
-    [bottomDepthFt, dilO2, dilHe, setpoint, settings.o2Narcotic]
+    [safeDepthFt, dilO2, dilHe, setpoint, settings.o2Narcotic]
   );
 
   // Map gases so CCR simulation uses ccrSwitchDepthFt when plumbed in, and OC uses switchDepthFt
@@ -510,8 +666,8 @@ export default function DecoPlanner() {
   const ccrPlan = useMemo(
     () =>
       runDecoSimulation({
-        bottomDepthFt,
-        bottomTimeMin,
+        bottomDepthFt: safeDepthFt,
+        bottomTimeMin: safeBottomMin,
         setpoint,
         decoSetpoint: useDecoSpBoost ? decoSetpoint : setpoint,
         decoSpSwitchDepthFt: useDecoSpBoost ? decoSpSwitchDepthFt : 0,
@@ -525,8 +681,8 @@ export default function DecoPlanner() {
         settings,
       }),
     [
-      bottomDepthFt,
-      bottomTimeMin,
+      safeDepthFt,
+      safeBottomMin,
       setpoint,
       useDecoSpBoost,
       decoSetpoint,
@@ -546,8 +702,8 @@ export default function DecoPlanner() {
   const ocBailoutPlan = useMemo(
     () =>
       runDecoSimulation({
-        bottomDepthFt,
-        bottomTimeMin,
+        bottomDepthFt: safeDepthFt,
+        bottomTimeMin: safeBottomMin,
         setpoint,
         gfLowPct: gfLow,
         gfHighPct: gfHigh,
@@ -559,8 +715,8 @@ export default function DecoPlanner() {
         settings,
       }),
     [
-      bottomDepthFt,
-      bottomTimeMin,
+      safeDepthFt,
+      safeBottomMin,
       setpoint,
       gfLow,
       gfHigh,
@@ -572,6 +728,505 @@ export default function DecoPlanner() {
       settings,
     ]
   );
+
+  // 4. SMART MULTI-TIER BAILOUT & PLUMB-IN RECOMMENDATION ENGINE
+  const smartRecommendations = useMemo(() => {
+    const ambBar = depthFtToBar(safeDepthFt);
+    const dilInertSum = Math.max(1, 100 - dilO2);
+    const heRatio = dilHe / dilInertSum;
+    const candidates: ExtendedGasMix[] = [];
+
+    // Tier A: Shallow / Recreational-Tech Range (<= 110 ft & Zero He)
+    if (safeDepthFt <= 110 && dilHe === 0) {
+      const botO2 =
+        recMixStyle === "shop"
+          ? safeDepthFt <= 100
+            ? 32
+            : 21
+          : Math.min(36, Math.floor((1.4 / ambBar) * 100));
+      const botMod = calcModFt(botO2, 1.4);
+      candidates.push({
+        id: "rec_bot",
+        name: botO2 === 21 ? "EAN21" : `EAN${botO2}`,
+        o2: botO2,
+        he: 0,
+        n2: 100 - botO2,
+        maxPo2Limit: 1.4,
+        switchDepthFt: Math.max(safeDepthFt, botMod),
+        ccrSwitchDepthFt: Math.min(safeDepthFt, calcModFt(botO2, 1.2)),
+        tankSizeCuFt: 80,
+        workingPsi: 3000,
+        isUsedAsDiluentOnAscent: false,
+        roleTag: "Bottom / Ascent Bailout",
+      });
+
+      if (safeDepthFt >= 70 || safeBottomMin >= 30) {
+        candidates.push({
+          id: "rec_deco50",
+          name: "EAN50",
+          o2: 50,
+          he: 0,
+          n2: 50,
+          maxPo2Limit: 1.6,
+          switchDepthFt: 70,
+          ccrSwitchDepthFt: 40,
+          tankSizeCuFt: 40,
+          workingPsi: 3000,
+          isUsedAsDiluentOnAscent: false,
+          roleTag: "Accelerated Deco (70ft)",
+        });
+      }
+    }
+    // Tier B: Normoxic Technical / Mid-Trimix Range (111 ft – 195 ft)
+    else if (safeDepthFt <= 195) {
+      let botO2 =
+        recMixStyle === "shop"
+          ? safeDepthFt <= 130
+            ? 21
+            : 18
+          : Math.min(26, Math.max(16, Math.floor((1.4 / ambBar) * 100)));
+      let botHe =
+        recMixStyle === "shop" && dilHe > 0
+          ? dilHe >= 40
+            ? 45
+            : 35
+          : Math.round(((100 - botO2) * heRatio) / 5) * 5;
+      botHe = Math.min(100 - botO2, Math.max(0, botHe));
+
+      const botName =
+        botHe > 0 ? `TMx ${botO2}/${botHe}` : `EAN${botO2}`;
+      const botMod = calcModFt(botO2, 1.4);
+      const botCcrFlush = Math.min(
+        safeDepthFt,
+        Math.max(60, calcModFt(botO2, 1.2))
+      );
+
+      candidates.push({
+        id: "rec_deep",
+        name: botName,
+        o2: botO2,
+        he: botHe,
+        n2: 100 - botO2 - botHe,
+        maxPo2Limit: 1.4,
+        switchDepthFt: Math.max(safeDepthFt, botMod),
+        ccrSwitchDepthFt: botCcrFlush,
+        tankSizeCuFt: 80,
+        workingPsi: 3000,
+        isUsedAsDiluentOnAscent: true,
+        roleTag: "Bottom Bailout + CCR Flush",
+      });
+
+      // ICD-safe 50% O2 mix if Helium >= 35% in Matched mode, else standard EAN50
+      const decoHe =
+        recMixStyle === "matched" && botHe >= 35
+          ? Math.round((50 * heRatio) / 5) * 5
+          : 0;
+      const decoName = decoHe > 0 ? `TMx 50/${decoHe}` : "EAN50";
+      candidates.push({
+        id: "rec_deco50",
+        name: decoName,
+        o2: 50,
+        he: decoHe,
+        n2: 50 - decoHe,
+        maxPo2Limit: 1.6,
+        switchDepthFt: 70,
+        ccrSwitchDepthFt: 40,
+        tankSizeCuFt: 80,
+        workingPsi: 3000,
+        isUsedAsDiluentOnAscent: false,
+        roleTag: decoHe > 0 ? "ICD-Buffered Deco (70ft)" : "Primary Deco (70ft)",
+      });
+
+      candidates.push({
+        id: "rec_o2",
+        name: "O2 100%",
+        o2: 100,
+        he: 0,
+        n2: 0,
+        maxPo2Limit: 1.6,
+        switchDepthFt: 20,
+        ccrSwitchDepthFt: 20,
+        tankSizeCuFt: 40,
+        workingPsi: 3000,
+        isUsedAsDiluentOnAscent: false,
+        roleTag: "Shallow Deco (20ft)",
+      });
+    }
+    // Tier C: Deep / Hypoxic Trimix Range (> 195 ft) — Full 4-Gas ICD-Safe Bridge
+    else {
+      const deepO2 =
+        recMixStyle === "shop"
+          ? safeDepthFt <= 240
+            ? 15
+            : 12
+          : Math.min(18, Math.max(10, Math.floor((1.35 / ambBar) * 100)));
+      const deepHe = Math.min(
+        100 - deepO2,
+        Math.max(45, Math.round(((100 - deepO2) * heRatio) / 5) * 5)
+      );
+      candidates.push({
+        id: "rec_deep",
+        name: `TMx ${deepO2}/${deepHe}`,
+        o2: deepO2,
+        he: deepHe,
+        n2: 100 - deepO2 - deepHe,
+        maxPo2Limit: 1.4,
+        switchDepthFt: Math.max(safeDepthFt, calcModFt(deepO2, 1.4)),
+        ccrSwitchDepthFt: Math.min(safeDepthFt, calcModFt(deepO2, 1.2)),
+        tankSizeCuFt: 80,
+        workingPsi: 3000,
+        isUsedAsDiluentOnAscent: false,
+        roleTag: "Deep Bottom Bailout",
+      });
+
+      // Travel / Mid-Switch Bridge (prevents ICD jumping from high-He to Nitrox)
+      candidates.push({
+        id: "rec_travel",
+        name: "TMx 35/25",
+        o2: 35,
+        he: 25,
+        n2: 40,
+        maxPo2Limit: 1.5,
+        switchDepthFt: 110,
+        ccrSwitchDepthFt: 80,
+        tankSizeCuFt: 80,
+        workingPsi: 3000,
+        isUsedAsDiluentOnAscent: true,
+        roleTag: "ICD Bridge (110ft) + Loop Flush",
+      });
+
+      candidates.push({
+        id: "rec_deco50",
+        name: recMixStyle === "matched" ? "TMx 50/15" : "EAN50",
+        o2: 50,
+        he: recMixStyle === "matched" ? 15 : 0,
+        n2: recMixStyle === "matched" ? 35 : 50,
+        maxPo2Limit: 1.6,
+        switchDepthFt: 70,
+        ccrSwitchDepthFt: 40,
+        tankSizeCuFt: 80,
+        workingPsi: 3000,
+        isUsedAsDiluentOnAscent: false,
+        roleTag: "Intermediate Deco (70ft)",
+      });
+
+      candidates.push({
+        id: "rec_o2",
+        name: "O2 100%",
+        o2: 100,
+        he: 0,
+        n2: 0,
+        maxPo2Limit: 1.6,
+        switchDepthFt: 20,
+        ccrSwitchDepthFt: 20,
+        tankSizeCuFt: 80,
+        workingPsi: 3000,
+        isUsedAsDiluentOnAscent: false,
+        roleTag: "Shallow O2 Deco (20ft)",
+      });
+    }
+
+    // Simulate OC Bailout on the candidate fleet to auto-size each cylinder accurately
+    const simResult = runDecoSimulation({
+      bottomDepthFt: safeDepthFt,
+      bottomTimeMin: safeBottomMin,
+      setpoint,
+      gfLowPct: gfLow,
+      gfHighPct: gfHigh,
+      bottomDil: { o2: dilO2, he: dilHe },
+      ascentGases: candidates,
+      mode: "OC",
+      workingSacCuFtMin: workingSac,
+      decoSacCuFtMin: decoSac,
+      settings,
+    });
+
+    return candidates.map((c) => {
+      const rawCuFt = simResult.gasUsageCuFt[c.name] || 0;
+      const neededCuFt = Math.max(
+        10,
+        Math.ceil(includeThirdsReserve ? rawCuFt * 1.5 : rawCuFt)
+      );
+      const cylSpec = pickSmartCylinderSpec(neededCuFt);
+      return {
+        ...c,
+        tankSizeCuFt: cylSpec.tankSizeCuFt,
+        workingPsi: cylSpec.workingPsi,
+        neededCuFt,
+        cylLabel: cylSpec.cylLabel,
+      };
+    });
+  }, [
+    safeDepthFt,
+    safeBottomMin,
+    dilO2,
+    dilHe,
+    setpoint,
+    gfLow,
+    gfHigh,
+    workingSac,
+    decoSac,
+    includeThirdsReserve,
+    settings,
+    recMixStyle,
+  ]);
+
+  const applyFullSmartFleet = () => {
+    const deployed: ExtendedGasMix[] = smartRecommendations.map((r, i) => ({
+      id: `smart_${Date.now()}_${i}`,
+      name: r.name,
+      o2: r.o2,
+      he: r.he,
+      n2: r.n2,
+      maxPo2Limit: r.maxPo2Limit,
+      switchDepthFt: r.switchDepthFt,
+      ccrSwitchDepthFt: r.ccrSwitchDepthFt,
+      tankSizeCuFt: r.tankSizeCuFt,
+      workingPsi: r.workingPsi,
+      isUsedAsDiluentOnAscent: r.isUsedAsDiluentOnAscent,
+      roleTag: r.roleTag,
+    }));
+    setGases(deployed);
+    setEditingGasId(null);
+    triggerToast(
+      `Loaded ${deployed.length}-Tank Smart Bailout & Plumb-In Fleet ✓`
+    );
+  };
+
+  const addSingleSmartTank = (r: (typeof smartRecommendations)[number]) => {
+    const entry: ExtendedGasMix = {
+      id: `smart_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+      name: r.name,
+      o2: r.o2,
+      he: r.he,
+      n2: r.n2,
+      maxPo2Limit: r.maxPo2Limit,
+      switchDepthFt: r.switchDepthFt,
+      ccrSwitchDepthFt: r.ccrSwitchDepthFt,
+      tankSizeCuFt: r.tankSizeCuFt,
+      workingPsi: r.workingPsi,
+      isUsedAsDiluentOnAscent: r.isUsedAsDiluentOnAscent,
+      roleTag: r.roleTag,
+    };
+    setGases([...gases, entry]);
+    triggerToast(`Added ${r.name} (${r.cylLabel}) to Dive Plan ✓`);
+  };
+
+  // Build Unified "BOTH" Table Rows so EVERY CCR Flush, SP Boost & OC Switch Depth is visible
+  const unifiedBothRows = useMemo(() => {
+    const ccrAscRows = ccrPlan.profileRows.filter((r) => r.phase === "SWITCH");
+    const ocAscRows = ocBailoutPlan.profileRows.filter(
+      (r) => r.phase === "SWITCH"
+    );
+
+    const deepestFirstStop = Math.max(
+      ccrPlan.stops[0]?.depthFt || 0,
+      ocBailoutPlan.stops[0]?.depthFt || 0
+    );
+
+    // Collect every ascent switch waypoint deeper than the first stop
+    const switchWaypoints = new Set<number>([safeDepthFt]);
+    if (deepestFirstStop > 0) switchWaypoints.add(deepestFirstStop);
+
+    ccrAscRows.forEach((r) => {
+      if (r.depthFt >= deepestFirstStop && r.depthFt <= safeDepthFt) {
+        switchWaypoints.add(r.depthFt);
+      }
+    });
+    ocAscRows.forEach((r) => {
+      if (r.depthFt >= deepestFirstStop && r.depthFt <= safeDepthFt) {
+        switchWaypoints.add(r.depthFt);
+      }
+    });
+    gases.forEach((g) => {
+      if (g.switchDepthFt < safeDepthFt && g.switchDepthFt > deepestFirstStop) {
+        switchWaypoints.add(g.switchDepthFt);
+      }
+      const ccrSw = g.ccrSwitchDepthFt || g.switchDepthFt;
+      if (
+        g.isUsedAsDiluentOnAscent &&
+        ccrSw < safeDepthFt &&
+        ccrSw > deepestFirstStop
+      ) {
+        switchWaypoints.add(ccrSw);
+      }
+    });
+    if (
+      useDecoSpBoost &&
+      decoSpSwitchDepthFt < safeDepthFt &&
+      decoSpSwitchDepthFt > deepestFirstStop
+    ) {
+      switchWaypoints.add(decoSpSwitchDepthFt);
+    }
+
+    const sortedWaypoints = Array.from(switchWaypoints).sort((a, b) => b - a);
+
+    // Helper to evaluate active CCR Diluent, SP, and OC Gas at any transit depth
+    const getCcrGasAt = (d: number) => {
+      const cands = gases
+        .filter(
+          (g) =>
+            g.isUsedAsDiluentOnAscent &&
+            d <= (g.ccrSwitchDepthFt || g.switchDepthFt)
+        )
+        .sort(
+          (a, b) =>
+            (a.ccrSwitchDepthFt || a.switchDepthFt) -
+            (b.ccrSwitchDepthFt || b.switchDepthFt)
+        );
+      return cands.length > 0 ? cands[0].name : `Dil ${dilO2}/${dilHe}`;
+    };
+
+    const getOcGasAt = (d: number) => {
+      const amb = depthFtToBar(d);
+      const valid = gases
+        .filter((g) => d <= g.switchDepthFt && (g.o2 / 100) * amb >= 0.16)
+        .sort((a, b) => a.switchDepthFt - b.switchDepthFt);
+      if (valid.length > 0) return valid[0].name;
+      if (gases.length > 0) {
+        return [...gases].sort(
+          (a, b) => b.switchDepthFt - a.switchDepthFt || a.o2 - b.o2
+        )[0].name;
+      }
+      return `Dil ${dilO2}/${dilHe}`;
+    };
+
+    const ascentBands: {
+      id: string;
+      label: string;
+      targetDepth: number;
+      transitMin: number;
+      ccrRun: number;
+      ocRun: number;
+      sp: number;
+      ccrDil: string;
+      ocGas: string;
+      ccrSwitched: boolean;
+      spBoosted: boolean;
+      ocSwitched: boolean;
+    }[] = [];
+
+    let ccrElapsed = safeBottomMin;
+    let ocElapsed = safeBottomMin + settings.ocProblemTimeMin;
+    let prevCcrDil = `Dil ${dilO2}/${dilHe}`;
+    let prevSp = setpoint;
+    let prevOcGas = getOcGasAt(safeDepthFt);
+
+    for (let i = 0; i < sortedWaypoints.length - 1; i++) {
+      const fromD = sortedWaypoints[i];
+      const toD = sortedWaypoints[i + 1];
+      if (fromD <= toD) continue;
+      const transitMin =
+        Math.round(((fromD - toD) / Math.max(5, settings.ascentRateFtMin)) * 10) /
+        10;
+      ccrElapsed += transitMin;
+      ocElapsed += transitMin;
+
+      const ccrDil = getCcrGasAt(toD);
+      const ocGas = getOcGasAt(toD);
+      const sp =
+        useDecoSpBoost && toD <= decoSpSwitchDepthFt ? decoSetpoint : setpoint;
+
+      ascentBands.push({
+        id: `band_${fromD}_${toD}`,
+        label: `${fromD} → ${toD} ft (Asc)`,
+        targetDepth: toD,
+        transitMin,
+        ccrRun: Math.round(ccrElapsed),
+        ocRun: Math.round(ocElapsed),
+        sp,
+        ccrDil,
+        ocGas,
+        ccrSwitched: ccrDil !== prevCcrDil,
+        spBoosted: sp !== prevSp,
+        ocSwitched: ocGas !== prevOcGas,
+      });
+
+      prevCcrDil = ccrDil;
+      prevSp = sp;
+      prevOcGas = ocGas;
+    }
+
+    // Collect all stop depths + any shallow switch depths at or shallower than deepestFirstStop
+    const stopDepthSet = new Set<number>([
+      ...ccrPlan.stops.map((s) => s.depthFt),
+      ...ocBailoutPlan.stops.map((s) => s.depthFt),
+    ]);
+    gases.forEach((g) => {
+      if (
+        g.switchDepthFt <= deepestFirstStop &&
+        g.switchDepthFt >= settings.lastStopDepthFt
+      ) {
+        stopDepthSet.add(g.switchDepthFt);
+      }
+      const ccrSw = g.ccrSwitchDepthFt || g.switchDepthFt;
+      if (
+        g.isUsedAsDiluentOnAscent &&
+        ccrSw <= deepestFirstStop &&
+        ccrSw >= settings.lastStopDepthFt
+      ) {
+        stopDepthSet.add(ccrSw);
+      }
+    });
+
+    const sortedStopDepths = Array.from(stopDepthSet).sort((a, b) => b - a);
+    const stopRows = sortedStopDepths.map((depth) => {
+      const ccrStop = ccrPlan.stops.find((s) => s.depthFt === depth);
+      const boStop = ocBailoutPlan.stops.find((b) => b.depthFt === depth);
+
+      const ccrDil = ccrStop ? ccrStop.activeGasName : getCcrGasAt(depth);
+      const ocGas = boStop ? boStop.activeGasName : getOcGasAt(depth);
+      const sp = ccrStop
+        ? ccrStop.activeSp
+        : Number(
+            Math.min(
+              depthFtToBar(depth),
+              useDecoSpBoost && depth <= decoSpSwitchDepthFt
+                ? decoSetpoint
+                : setpoint
+            ).toFixed(2)
+          );
+
+      const ccrSwitched = ccrDil !== prevCcrDil;
+      const spBoosted =
+        useDecoSpBoost &&
+        depth <= decoSpSwitchDepthFt &&
+        prevSp < decoSetpoint &&
+        sp > prevSp;
+      const ocSwitched = ocGas !== prevOcGas;
+
+      prevCcrDil = ccrDil;
+      prevSp = sp;
+      prevOcGas = ocGas;
+
+      return {
+        depth,
+        ccrStop,
+        boStop,
+        ccrDil,
+        ocGas,
+        sp,
+        ccrSwitched,
+        spBoosted,
+        ocSwitched,
+      };
+    });
+
+    return { ascentBands, stopRows, bottomOcGas: getOcGasAt(safeDepthFt) };
+  }, [
+    ccrPlan,
+    ocBailoutPlan,
+    safeDepthFt,
+    safeBottomMin,
+    gases,
+    dilO2,
+    dilHe,
+    setpoint,
+    useDecoSpBoost,
+    decoSetpoint,
+    decoSpSwitchDepthFt,
+    settings,
+  ]);
 
   // Parse Subsurface (.ssrf / .uddf / .xml) file
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -647,9 +1302,9 @@ export default function DecoPlanner() {
     for (let t = 0; t <= totalMin; t++) {
       let d = 0;
       if (t <= 3) {
-        d = Math.round((t / 3) * bottomDepthFt);
-      } else if (t <= bottomTimeMin) {
-        d = bottomDepthFt + Math.round(Math.sin(t) * 4);
+        d = Math.round((t / 3) * safeDepthFt);
+      } else if (t <= safeBottomMin) {
+        d = safeDepthFt + Math.round(Math.sin(t) * 4);
       } else {
         const matchStop = ccrPlan.stops.find((s) => t <= s.runTimeMin);
         d = matchStop
@@ -660,7 +1315,7 @@ export default function DecoPlanner() {
       const sp =
         t < 5
           ? 0.7
-          : useDecoSpBoost && t > bottomTimeMin && d <= decoSpSwitchDepthFt
+          : useDecoSpBoost && t > safeBottomMin && d <= decoSpSwitchDepthFt
           ? decoSetpoint
           : setpoint;
       const oscillation =
@@ -686,7 +1341,7 @@ export default function DecoPlanner() {
 
     const maxActualDepth = Math.max(...actualSamples.map((s) => s.depthFt));
     const bottomSamples = actualSamples.filter(
-      (s) => s.timeMin >= 4 && s.timeMin <= bottomTimeMin
+      (s) => s.timeMin >= 4 && s.timeMin <= safeBottomMin
     );
 
     const po2Diffs = bottomSamples.map((s) =>
@@ -743,15 +1398,19 @@ export default function DecoPlanner() {
       maxCellSpread: maxCellSpread.toFixed(2),
       suggestions,
     };
-  }, [actualSamples, bottomTimeMin, setpoint]);
+  }, [actualSamples, safeBottomMin, setpoint]);
 
   const plumbedInGases = gases.filter((g) => g.isUsedAsDiluentOnAscent);
+  const sortedOcScheduleGases = useMemo(
+    () => [...gases].sort((a, b) => b.switchDepthFt - a.switchDepthFt),
+    [gases]
+  );
 
   return (
     <div className="space-y-3.5 relative">
       {/* FLOATING CONFIRMATION TOAST */}
       {statusToast && (
-        <div className="sticky top-14 z-40 bg-emerald-950 border-2 border-emerald-400 text-emerald-100 px-3.5 py-2.5 rounded-xl shadow-2xl flex items-center justify-between text-xs font-mono font-bold animate-fade-in">
+        <div className="sticky top-14 z-40 bg-emerald-950 border-2 border-emerald-400 text-emerald-100 px-3.5 py-2.5 rounded-xl shadow-2xl flex items-center justify-between text-xs font-mono font-bold">
           <span className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
             {statusToast}
@@ -762,7 +1421,7 @@ export default function DecoPlanner() {
         </div>
       )}
 
-      {/* TOP BAR: SUBTABS + MULTIDECO SETTINGS BUTTON */}
+      {/* TOP BAR: SUBTABS + PLANNER SETTINGS BUTTON */}
       <div className="flex items-center gap-2">
         <div className="flex-1 grid grid-cols-2 gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800">
           <button
@@ -794,19 +1453,19 @@ export default function DecoPlanner() {
               ? "bg-amber-500 text-slate-950 border-amber-400"
               : "bg-slate-900 text-amber-400 border-slate-800 hover:border-amber-500/50"
           }`}
-          title="MultiDeco Engine Settings & Defaults"
+          title="Planner Settings & Defaults"
         >
           <Settings className="w-4 h-4" />
           <span className="hidden sm:inline">Settings</span>
         </button>
       </div>
 
-      {/* MULTIDECO FULL SETTINGS SUITE DRAWER */}
+      {/* PLANNER SETTINGS & DEFAULTS DRAWER */}
       {showSettingsModal && (
         <div className="bg-slate-900 border-2 border-amber-500/60 rounded-2xl p-4 space-y-3.5 shadow-2xl">
           <div className="flex items-center justify-between border-b border-slate-800 pb-2">
             <span className="text-xs font-mono uppercase text-amber-400 font-bold flex items-center gap-1.5">
-              <Settings className="w-4 h-4" /> MultiDeco Engine Settings & Defaults
+              <Settings className="w-4 h-4" /> Planner Settings & Defaults
             </span>
             <button
               onClick={() => setShowSettingsModal(false)}
@@ -845,16 +1504,12 @@ export default function DecoPlanner() {
                 OC PROBLEM TIME @ BOTTOM
               </label>
               <div className="flex items-center gap-1.5">
-                <input
-                  type="number"
+                <NumericInput
                   min={0}
                   max={15}
                   value={settings.ocProblemTimeMin}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      ocProblemTimeMin: Number(e.target.value),
-                    })
+                  onChange={(val) =>
+                    setSettings({ ...settings, ocProblemTimeMin: val })
                   }
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 font-mono text-xs text-white text-center font-bold"
                 />
@@ -865,19 +1520,17 @@ export default function DecoPlanner() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
             <div>
               <label className="text-[10px] font-mono text-slate-400 block mb-1">
-                DESCENT RATE (FT/MIN)
+                DESCENT (FT/MIN)
               </label>
-              <input
-                type="number"
+              <NumericInput
+                min={10}
+                max={120}
                 value={settings.descentRateFtMin}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    descentRateFtMin: Number(e.target.value),
-                  })
+                onChange={(val) =>
+                  setSettings({ ...settings, descentRateFtMin: val })
                 }
                 className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 font-mono text-xs text-white text-center font-bold"
               />
@@ -885,16 +1538,14 @@ export default function DecoPlanner() {
 
             <div>
               <label className="text-[10px] font-mono text-slate-400 block mb-1">
-                ASCENT RATE (FT/MIN)
+                ASCENT (FT/MIN)
               </label>
-              <input
-                type="number"
+              <NumericInput
+                min={5}
+                max={60}
                 value={settings.ascentRateFtMin}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    ascentRateFtMin: Number(e.target.value),
-                  })
+                onChange={(val) =>
+                  setSettings({ ...settings, ascentRateFtMin: val })
                 }
                 className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 font-mono text-xs text-white text-center font-bold"
               />
@@ -902,7 +1553,22 @@ export default function DecoPlanner() {
 
             <div>
               <label className="text-[10px] font-mono text-slate-400 block mb-1">
-                END CALCULATION
+                TARGET MAX END (FT)
+              </label>
+              <NumericInput
+                min={60}
+                max={150}
+                value={settings.targetEndFt}
+                onChange={(val) =>
+                  setSettings({ ...settings, targetEndFt: val })
+                }
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 font-mono text-xs text-cyan-300 text-center font-bold"
+              />
+            </div>
+
+            <div>
+              <label className="text-[10px] font-mono text-slate-400 block mb-1">
+                END NARCOSIS
               </label>
               <button
                 onClick={() =>
@@ -948,7 +1614,6 @@ export default function DecoPlanner() {
               )}
             </div>
 
-            {/* Dropdown Selector for Saved Dives */}
             <div className="flex gap-2">
               <select
                 value={selectedFavId}
@@ -978,7 +1643,6 @@ export default function DecoPlanner() {
               )}
             </div>
 
-            {/* Save Current Plan Input */}
             <div className="flex gap-2">
               <input
                 type="text"
@@ -996,11 +1660,11 @@ export default function DecoPlanner() {
             </div>
           </div>
 
-          {/* 1. PROFILE, SETPOINT SCHEDULE & SAC RATE INPUT CARD */}
+          {/* 1. PROFILE, DILUENT, GFs & SETPOINT SCHEDULE CARD */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-mono uppercase text-purple-400 font-bold">
-                1. Profile, Setpoint Schedule & Diluent
+                1. Profile, Diluent & Setpoint Schedule
               </span>
               <span className="text-[10px] font-mono text-slate-400">
                 Last Stop: {settings.lastStopDepthFt}ft | Asc:{" "}
@@ -1008,15 +1672,17 @@ export default function DecoPlanner() {
               </span>
             </div>
 
+            {/* ROW 1: DEPTH, BOTTOM TIME, BOTTOM SETPOINT */}
             <div className="grid grid-cols-3 gap-2.5">
               <div>
                 <label className="text-[10px] font-mono text-slate-400 block mb-1">
                   DEPTH (FT)
                 </label>
-                <input
-                  type="number"
+                <NumericInput
+                  min={10}
+                  max={450}
                   value={bottomDepthFt}
-                  onChange={(e) => setBottomDepthFt(Number(e.target.value))}
+                  onChange={setBottomDepthFt}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 font-mono text-sm text-white text-center font-bold"
                 />
               </div>
@@ -1024,10 +1690,11 @@ export default function DecoPlanner() {
                 <label className="text-[10px] font-mono text-slate-400 block mb-1">
                   BOT TIME (MIN)
                 </label>
-                <input
-                  type="number"
+                <NumericInput
+                  min={1}
+                  max={300}
                   value={bottomTimeMin}
-                  onChange={(e) => setBottomTimeMin(Number(e.target.value))}
+                  onChange={setBottomTimeMin}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 font-mono text-sm text-white text-center font-bold"
                 />
               </div>
@@ -1035,17 +1702,105 @@ export default function DecoPlanner() {
                 <label className="text-[10px] font-mono text-slate-400 block mb-1">
                   BOTTOM SP (ATA)
                 </label>
-                <input
-                  type="number"
-                  step="0.05"
+                <NumericInput
+                  min={0.4}
+                  max={1.6}
                   value={setpoint}
-                  onChange={(e) => setSetpoint(Number(e.target.value))}
+                  onChange={setSetpoint}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 font-mono text-sm text-emerald-400 text-center font-bold"
                 />
               </div>
             </div>
 
-            {/* ASCENT / DECO SETPOINT BOOST SCHEDULE */}
+            {/* ROW 2: ONBOARD DILUENT (AUTO-SYNCED TO DEPTH & PO2) + GF LOW/HIGH */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-mono text-slate-400 uppercase">
+                  Onboard Diluent & Gradient Factors
+                </span>
+                <button
+                  onClick={() => setAutoMatchDiluent(!autoMatchDiluent)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border flex items-center gap-1 transition-all ${
+                    autoMatchDiluent
+                      ? "bg-purple-500/20 border-purple-400 text-purple-200"
+                      : "bg-slate-950 border-slate-700 text-slate-400 hover:text-white"
+                  }`}
+                  title="Automatically populate Diluent O2% & He% from Depth, Bottom PO2, and Target END"
+                >
+                  <RotateCcw className="w-2.5 h-2.5" />
+                  {autoMatchDiluent
+                    ? `Auto-Matched Gas (END ≤${settings.targetEndFt}ft)`
+                    : "Custom Gas (Tap to Auto-Match)"}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-4 gap-2">
+                <div>
+                  <label className="text-[10px] font-mono text-slate-400 block mb-1">
+                    DIL O2%
+                  </label>
+                  <NumericInput
+                    min={5}
+                    max={100}
+                    value={dilO2}
+                    onChange={(val) => {
+                      setAutoMatchDiluent(false);
+                      setDilO2(val);
+                    }}
+                    className={`w-full bg-slate-950 border rounded-xl p-2 font-mono text-xs text-center font-bold ${
+                      autoMatchDiluent
+                        ? "border-purple-500/50 text-purple-200"
+                        : "border-slate-700 text-white"
+                    }`}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-mono text-slate-400 block mb-1">
+                    DIL HE%
+                  </label>
+                  <NumericInput
+                    min={0}
+                    max={95}
+                    value={dilHe}
+                    onChange={(val) => {
+                      setAutoMatchDiluent(false);
+                      setDilHe(val);
+                    }}
+                    className={`w-full bg-slate-950 border rounded-xl p-2 font-mono text-xs text-center font-bold ${
+                      autoMatchDiluent
+                        ? "border-purple-500/50 text-purple-200"
+                        : "border-slate-700 text-white"
+                    }`}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-mono text-slate-400 block mb-1">
+                    GF LOW
+                  </label>
+                  <NumericInput
+                    min={10}
+                    max={100}
+                    value={gfLow}
+                    onChange={setGfLow}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 font-mono text-xs text-cyan-400 text-center font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-mono text-slate-400 block mb-1">
+                    GF HIGH
+                  </label>
+                  <NumericInput
+                    min={20}
+                    max={100}
+                    value={gfHigh}
+                    onChange={setGfHigh}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 font-mono text-xs text-cyan-400 text-center font-bold"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* ROW 3 (MOVED BELOW DILUENT & GFs): ASCENT / DECO SETPOINT BOOST */}
             <div className="bg-slate-950/90 border border-emerald-500/30 rounded-xl p-3 space-y-2.5">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-mono uppercase text-emerald-400 font-bold flex items-center gap-1.5">
@@ -1069,13 +1824,11 @@ export default function DecoPlanner() {
                     <label className="text-[10px] font-mono text-slate-400 block mb-1">
                       RAISE PO2 AT DEPTH (FT)
                     </label>
-                    <input
-                      type="number"
-                      step="10"
+                    <NumericInput
+                      min={10}
+                      max={200}
                       value={decoSpSwitchDepthFt}
-                      onChange={(e) =>
-                        setDecoSpSwitchDepthFt(Number(e.target.value))
-                      }
+                      onChange={setDecoSpSwitchDepthFt}
                       className="w-full bg-slate-900 border border-emerald-500/40 rounded-lg p-1.5 font-mono text-xs text-white text-center font-bold"
                     />
                   </div>
@@ -1083,11 +1836,11 @@ export default function DecoPlanner() {
                     <label className="text-[10px] font-mono text-slate-400 block mb-1">
                       DECO SETPOINT (ATA)
                     </label>
-                    <input
-                      type="number"
-                      step="0.05"
+                    <NumericInput
+                      min={0.7}
+                      max={1.6}
                       value={decoSetpoint}
-                      onChange={(e) => setDecoSetpoint(Number(e.target.value))}
+                      onChange={setDecoSetpoint}
                       className={`w-full bg-slate-900 border rounded-lg p-1.5 font-mono text-xs text-center font-bold ${
                         decoSetpoint > 1.4
                           ? "border-amber-500 text-amber-300"
@@ -1099,54 +1852,7 @@ export default function DecoPlanner() {
               )}
             </div>
 
-            <div className="grid grid-cols-4 gap-2">
-              <div>
-                <label className="text-[10px] font-mono text-slate-400 block mb-1">
-                  DIL O2%
-                </label>
-                <input
-                  type="number"
-                  value={dilO2}
-                  onChange={(e) => setDilO2(Number(e.target.value))}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 font-mono text-xs text-white text-center"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-mono text-slate-400 block mb-1">
-                  DIL HE%
-                </label>
-                <input
-                  type="number"
-                  value={dilHe}
-                  onChange={(e) => setDilHe(Number(e.target.value))}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 font-mono text-xs text-white text-center"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-mono text-slate-400 block mb-1">
-                  GF LOW
-                </label>
-                <input
-                  type="number"
-                  value={gfLow}
-                  onChange={(e) => setGfLow(Number(e.target.value))}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 font-mono text-xs text-cyan-400 text-center"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-mono text-slate-400 block mb-1">
-                  GF HIGH
-                </label>
-                <input
-                  type="number"
-                  value={gfHigh}
-                  onChange={(e) => setGfHigh(Number(e.target.value))}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 font-mono text-xs text-cyan-400 text-center"
-                />
-              </div>
-            </div>
-
-            {/* CONSUMPTION RATE (SAC / RMV) INPUTS FOR BAILOUT */}
+            {/* ROW 4: CONSUMPTION RATE (SAC / RMV) INPUTS FOR BAILOUT */}
             <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-mono uppercase text-cyan-400 flex items-center gap-1 font-bold">
@@ -1170,24 +1876,24 @@ export default function DecoPlanner() {
                   <label className="text-[10px] font-mono text-slate-400 block mb-1">
                     WORK / ASC SAC (CUFT/MIN)
                   </label>
-                  <input
-                    type="number"
-                    step="0.05"
+                  <NumericInput
+                    min={0.2}
+                    max={3.0}
                     value={workingSac}
-                    onChange={(e) => setWorkingSac(Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 font-mono text-xs text-white text-center"
+                    onChange={setWorkingSac}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 font-mono text-xs text-white text-center font-bold"
                   />
                 </div>
                 <div>
                   <label className="text-[10px] font-mono text-slate-400 block mb-1">
                     DECO STOP SAC (CUFT/MIN)
                   </label>
-                  <input
-                    type="number"
-                    step="0.05"
+                  <NumericInput
+                    min={0.2}
+                    max={3.0}
                     value={decoSac}
-                    onChange={(e) => setDecoSac(Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 font-mono text-xs text-white text-center"
+                    onChange={setDecoSac}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-1.5 font-mono text-xs text-white text-center font-bold"
                   />
                 </div>
               </div>
@@ -1207,7 +1913,7 @@ export default function DecoPlanner() {
                   {dilEval.flushPO2}
                 </span>
                 <span className="text-[9px] text-slate-500 block">
-                  Ideal ≤{dilEval.idealMaxDilO2Pct}%
+                  Max {dilEval.maxFlushDepthFt}ft
                 </span>
               </div>
 
@@ -1223,7 +1929,7 @@ export default function DecoPlanner() {
                   {dilEval.loopENDFt} ft
                 </span>
                 <span className="text-[9px] text-slate-500 block">
-                  Limit ≤130ft
+                  Target ≤{settings.targetEndFt}ft
                 </span>
               </div>
 
@@ -1253,13 +1959,13 @@ export default function DecoPlanner() {
                   {dilEval.loopFO2}/{dilEval.loopFHe}
                 </span>
                 <span className="text-[9px] text-slate-500 block">
-                  @ {bottomDepthFt}ft
+                  @ {safeDepthFt}ft
                 </span>
               </div>
             </div>
           </div>
 
-          {/* 2. OFFBOARD BAILOUT, TANK LOCKER & PLUMB-IN FLEET */}
+          {/* 2. OFFBOARD BAILOUT, SMART FLEET ENGINE & TANK LOCKER */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-mono uppercase text-cyan-400 font-bold">
@@ -1281,11 +1987,9 @@ export default function DecoPlanner() {
             {/* COLLAPSIBLE TANK LOCKER (FAVORITE TANKS) */}
             {showTankLocker && (
               <div className="bg-slate-950 border border-amber-500/40 rounded-xl p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-mono uppercase text-amber-300 font-bold">
-                    Favorite Tank Locker (Tap + to Deploy Into Dive Plan):
-                  </span>
-                </div>
+                <span className="text-[10px] font-mono uppercase text-amber-300 font-bold block">
+                  Favorite Tank Locker (Tap + to Deploy Into Dive Plan):
+                </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                   {tankLocker.map((t) => (
                     <div
@@ -1315,27 +2019,84 @@ export default function DecoPlanner() {
               </div>
             )}
 
-            {/* ONE-CLICK ACCEPT SUGGESTED BAILOUT TANKS */}
-            <div className="bg-slate-950 border border-cyan-500/30 rounded-xl p-3 space-y-2">
-              <span className="text-[10px] font-mono uppercase text-cyan-300 block">
-                Recommended He/N2-Matched Offboard Tanks (Tap to Add):
-              </span>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => addSuggestedMix(dilEval.idealLowBailout, true)}
-                  className="py-2 px-2.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-200 text-xs font-mono font-bold flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]"
-                >
-                  <Plus className="w-3.5 h-3.5 text-cyan-400" />
-                  Low-O2: {dilEval.idealLowBailout}
-                </button>
-                <button
-                  onClick={() => addSuggestedMix(dilEval.idealHighBailout, false)}
-                  className="py-2 px-2.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-200 text-xs font-mono font-bold flex items-center justify-center gap-1.5 transition-all active:scale-[0.98]"
-                >
-                  <Plus className="w-3.5 h-3.5 text-emerald-400" />
-                  High-O2: {dilEval.idealHighBailout}
-                </button>
+            {/* SMART MULTI-TIER RECOMMENDED BAILOUT & PLUMB-IN ENGINE */}
+            <div className="bg-slate-950 border border-cyan-500/30 rounded-xl p-3 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[10px] font-mono uppercase text-cyan-300 font-bold flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                  Smart Bailout & Stage Engine (Sized for {safeDepthFt}ft /{" "}
+                  {safeBottomMin}m)
+                </span>
+
+                <div className="flex bg-slate-900 p-0.5 rounded-lg border border-slate-800 text-[10px] font-mono font-bold">
+                  <button
+                    onClick={() => setRecMixStyle("matched")}
+                    className={`px-2 py-0.5 rounded transition-all ${
+                      recMixStyle === "matched"
+                        ? "bg-cyan-500 text-slate-950"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    He/ICD-Matched
+                  </button>
+                  <button
+                    onClick={() => setRecMixStyle("shop")}
+                    className={`px-2 py-0.5 rounded transition-all ${
+                      recMixStyle === "shop"
+                        ? "bg-cyan-500 text-slate-950"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    Standard Blends
+                  </button>
+                </div>
               </div>
+
+              <div className="space-y-1.5">
+                {smartRecommendations.map((r) => (
+                  <div
+                    key={r.id}
+                    className="flex items-center justify-between gap-2 bg-slate-900/90 border border-slate-800 rounded-lg px-2.5 py-2"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-xs font-mono font-bold text-white">
+                          {r.name}
+                        </span>
+                        <span className="text-[10px] font-mono text-amber-300 bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-500/30">
+                          {r.cylLabel} ({r.neededCuFt}/{r.tankSizeCuFt} cf)
+                        </span>
+                        <span className="text-[10px] font-mono text-cyan-300">
+                          OC ≤{r.switchDepthFt}ft
+                        </span>
+                        {r.isUsedAsDiluentOnAscent && (
+                          <span className="text-[10px] font-mono text-purple-300">
+                            • Flush @{r.ccrSwitchDepthFt}ft
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-400 block">
+                        {r.roleTag}
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={() => addSingleSmartTank(r)}
+                      className="px-2.5 py-1.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-200 text-[10px] font-mono font-bold flex items-center gap-1 shrink-0"
+                    >
+                      <Plus className="w-3 h-3 text-cyan-400" /> Add
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={applyFullSmartFleet}
+                className="w-full py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/50 text-emerald-200 text-xs font-mono font-bold flex items-center justify-center gap-1.5 transition-all active:scale-[0.99]"
+              >
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                Apply Full {smartRecommendations.length}-Tank Recommended Fleet
+              </button>
             </div>
 
             {/* ACTIVE TANK CARDS LIST */}
@@ -1345,7 +2106,7 @@ export default function DecoPlanner() {
                 const usedCuFt = Math.ceil(
                   includeThirdsReserve ? rawCuFt * 1.5 : rawCuFt
                 );
-                const psiPerCuFt = g.workingPsi / g.tankSizeCuFt;
+                const psiPerCuFt = g.workingPsi / Math.max(1, g.tankSizeCuFt);
                 const reqPsi = Math.round(usedCuFt * psiPerCuFt);
                 const isOverCapacity = usedCuFt > g.tankSizeCuFt;
                 const isEditingThis = editingGasId === g.id;
@@ -1427,12 +2188,11 @@ export default function DecoPlanner() {
                           Plumb & Flush into loop on ascent at:
                         </div>
                         <div className="flex items-center gap-1.5">
-                          <input
-                            type="number"
+                          <NumericInput
+                            min={10}
+                            max={350}
                             value={g.ccrSwitchDepthFt || g.switchDepthFt}
-                            onChange={(e) =>
-                              updateCcrSwitchDepth(g.id, Number(e.target.value))
-                            }
+                            onChange={(val) => updateCcrSwitchDepth(g.id, val)}
                             className="w-16 bg-slate-950 border border-purple-400/60 rounded px-2 py-1 font-mono text-xs text-purple-200 text-center font-bold"
                           />
                           <span className="text-[10px] font-mono text-purple-300">
@@ -1469,12 +2229,11 @@ export default function DecoPlanner() {
                   <label className="text-[10px] font-mono text-slate-400 block mb-1">
                     O2 (%)
                   </label>
-                  <input
-                    type="number"
+                  <NumericInput
+                    min={5}
+                    max={100}
                     value={formO2}
-                    onChange={(e) =>
-                      handleFormO2orPo2Change(Number(e.target.value), formMaxPo2)
-                    }
+                    onChange={(val) => handleFormO2orPo2Change(val, formMaxPo2)}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-center font-mono text-white font-bold"
                   />
                 </div>
@@ -1483,10 +2242,11 @@ export default function DecoPlanner() {
                   <label className="text-[10px] font-mono text-slate-400 block mb-1">
                     HELIUM (%)
                   </label>
-                  <input
-                    type="number"
+                  <NumericInput
+                    min={0}
+                    max={95}
                     value={formHe}
-                    onChange={(e) => setFormHe(Number(e.target.value))}
+                    onChange={setFormHe}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-center font-mono text-white font-bold"
                   />
                 </div>
@@ -1514,10 +2274,11 @@ export default function DecoPlanner() {
                   <label className="text-[10px] font-mono text-cyan-400 block mb-1">
                     AUTO MOD / SW (FT)
                   </label>
-                  <input
-                    type="number"
+                  <NumericInput
+                    min={10}
+                    max={400}
                     value={formSwitchFt}
-                    onChange={(e) => setFormSwitchFt(Number(e.target.value))}
+                    onChange={setFormSwitchFt}
                     className="w-full bg-slate-900 border border-cyan-500/50 rounded-lg p-2 text-xs text-center font-mono text-cyan-300 font-bold"
                   />
                 </div>
@@ -1526,11 +2287,12 @@ export default function DecoPlanner() {
                   <label className="text-[10px] font-mono text-slate-400 block mb-1">
                     TANK SIZE (CUFT)
                   </label>
-                  <input
-                    type="number"
+                  <NumericInput
+                    min={10}
+                    max={300}
                     value={formTankCuFt}
-                    onChange={(e) => setFormTankCuFt(Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-center font-mono text-white"
+                    onChange={setFormTankCuFt}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-center font-mono text-white font-bold"
                   />
                 </div>
 
@@ -1538,11 +2300,12 @@ export default function DecoPlanner() {
                   <label className="text-[10px] font-mono text-slate-400 block mb-1">
                     RATED PSI
                   </label>
-                  <input
-                    type="number"
+                  <NumericInput
+                    min={1500}
+                    max={4500}
                     value={formWorkingPsi}
-                    onChange={(e) => setFormWorkingPsi(Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-center font-mono text-white"
+                    onChange={setFormWorkingPsi}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-center font-mono text-white font-bold"
                   />
                 </div>
               </div>
@@ -1586,14 +2349,13 @@ export default function DecoPlanner() {
             </div>
           </div>
 
-          {/* 3. FULL DIVE SPREADSHEET (CLICK CCR OR OC TO FILTER VIEW) */}
+          {/* 3. FULL DIVE SPREADSHEET (SHOWS ALL CCR & OC SWITCH DEPTHS) */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-mono uppercase text-emerald-400 font-bold">
                 3. Full Dive Profile & Deco Schedule
               </span>
 
-              {/* View Filter Pills */}
               <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-[10px] font-mono font-bold">
                 <Eye className="w-3 h-3 text-slate-400 ml-1 mr-0.5" />
                 {(["BOTH", "CCR", "OC"] as const).map((m) => (
@@ -1612,7 +2374,7 @@ export default function DecoPlanner() {
               </div>
             </div>
 
-            {/* CLICKABLE SUMMARY CARDS (TAP CCR OR OC CARD TO SOLO THAT VIEW) */}
+            {/* CLICKABLE SUMMARY CARDS */}
             <div className="grid grid-cols-2 gap-2.5 font-mono">
               <button
                 onClick={() =>
@@ -1699,8 +2461,8 @@ export default function DecoPlanner() {
               </button>
             </div>
 
-            {/* Active CCR Diluent & Setpoint Schedule Summary Line */}
-            <div className="bg-slate-950 border border-purple-500/30 rounded-xl p-2.5 text-[11px] font-mono text-slate-300 space-y-1">
+            {/* COMPLETE CCR DILUENT, SETPOINT & OC BAILOUT SWITCH SUMMARY BANNERS */}
+            <div className="bg-slate-950 border border-purple-500/30 rounded-xl p-2.5 text-[11px] font-mono text-slate-300 space-y-1.5">
               <div>
                 <span className="text-purple-400 font-bold">
                   CCR DILUENT SCHEDULE:{" "}
@@ -1755,9 +2517,32 @@ export default function DecoPlanner() {
                   </span>
                 )}
               </div>
+
+              <div className="pt-1 border-t border-slate-800/80">
+                <span className="text-cyan-400 font-bold">
+                  OC BAILOUT SCHEDULE:{" "}
+                </span>
+                {sortedOcScheduleGases.length > 0 ? (
+                  sortedOcScheduleGases.map((g, idx) => (
+                    <span key={g.id}>
+                      {idx === 0 ? "Bailout @ Bottom to " : " → Switch "}
+                      <strong className="text-cyan-300">{g.name}</strong>{" "}
+                      <span className="text-white">
+                        ({idx === 0 && g.switchDepthFt >= safeDepthFt
+                          ? `≤${g.switchDepthFt}ft`
+                          : `@ ${g.switchDepthFt}ft`})
+                      </span>
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-slate-500">
+                    Onboard Dil {dilO2}/{dilHe} BOV only (Add offboard tanks above)
+                  </span>
+                )}
+              </div>
             </div>
 
-            {/* FULL DIVE SPREADSHEET TABLE (DESCENT -> BOTTOM -> ASCENT -> STOPS) */}
+            {/* FULL DIVE SPREADSHEET TABLE */}
             <div className="overflow-x-auto">
               {tableViewMode === "CCR" && (
                 <table className="w-full text-left font-mono text-xs border-collapse">
@@ -1773,38 +2558,50 @@ export default function DecoPlanner() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
-                    {ccrPlan.profileRows.map((r) => (
-                      <tr
-                        key={r.id}
-                        className={
-                          r.phase === "BOTTOM"
-                            ? "bg-purple-950/20"
-                            : r.phase === "ASCENT"
-                            ? "bg-slate-950/60 text-slate-400"
-                            : ""
-                        }
-                      >
-                        <td className="py-1.5 font-bold text-white">
-                          {r.depthLabel}
-                        </td>
-                        <td className="py-1.5 text-emerald-400 font-bold">
-                          {r.timeMin}m
-                        </td>
-                        <td className="py-1.5 text-slate-300">
-                          {r.runTimeMin}m
-                        </td>
-                        <td className="py-1.5 text-emerald-300">
-                          {r.activeSp}
-                        </td>
-                        <td className="py-1.5 text-purple-300 font-semibold">
-                          {r.activeGasName}
-                        </td>
-                        <td className="py-1.5 text-slate-400">
-                          {r.loopFO2}/{r.loopFHe}
-                        </td>
-                        <td className="py-1.5 text-slate-400">{r.cns}%</td>
-                      </tr>
-                    ))}
+                    {ccrPlan.profileRows.map((r, idx) => {
+                      const prev = ccrPlan.profileRows[idx - 1];
+                      const dilSwitched =
+                        idx > 0 && prev && prev.activeGasName !== r.activeGasName;
+                      return (
+                        <tr
+                          key={r.id}
+                          className={
+                            r.phase === "BOTTOM"
+                              ? "bg-purple-950/20"
+                              : dilSwitched
+                              ? "bg-purple-950/30"
+                              : r.phase === "SWITCH"
+                              ? "bg-slate-950/60 text-slate-400"
+                              : ""
+                          }
+                        >
+                          <td className="py-1.5 font-bold text-white">
+                            {r.depthLabel}
+                          </td>
+                          <td className="py-1.5 text-emerald-400 font-bold">
+                            {r.timeMin}m
+                          </td>
+                          <td className="py-1.5 text-slate-300">
+                            {r.runTimeMin}m
+                          </td>
+                          <td className="py-1.5 text-emerald-300">
+                            {r.activeSp}
+                          </td>
+                          <td className="py-1.5 text-purple-300 font-semibold">
+                            {r.activeGasName}
+                            {dilSwitched && (
+                              <span className="ml-1 text-[9px] bg-purple-500/30 text-purple-200 px-1 py-0.5 rounded">
+                                FLUSH
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-1.5 text-slate-400">
+                            {r.loopFO2}/{r.loopFHe}
+                          </td>
+                          <td className="py-1.5 text-slate-400">{r.cns}%</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
@@ -1822,33 +2619,45 @@ export default function DecoPlanner() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
-                    {ocBailoutPlan.profileRows.map((r) => (
-                      <tr
-                        key={r.id}
-                        className={
-                          r.phase === "PROBLEM"
-                            ? "bg-amber-950/30"
-                            : r.phase === "ASCENT"
-                            ? "bg-slate-950/60 text-slate-400"
-                            : ""
-                        }
-                      >
-                        <td className="py-1.5 font-bold text-white">
-                          {r.depthLabel}
-                        </td>
-                        <td className="py-1.5 text-amber-400 font-bold">
-                          {r.timeMin}m
-                        </td>
-                        <td className="py-1.5 text-slate-300">
-                          {r.runTimeMin}m
-                        </td>
-                        <td className="py-1.5 text-cyan-300 font-semibold">
-                          {r.activeGasName}
-                        </td>
-                        <td className="py-1.5 text-slate-300">{r.activeSp}</td>
-                        <td className="py-1.5 text-slate-400">{r.cns}%</td>
-                      </tr>
-                    ))}
+                    {ocBailoutPlan.profileRows.map((r, idx) => {
+                      const prev = ocBailoutPlan.profileRows[idx - 1];
+                      const gasSwitched =
+                        idx > 1 && prev && prev.activeGasName !== r.activeGasName;
+                      return (
+                        <tr
+                          key={r.id}
+                          className={
+                            r.phase === "PROBLEM"
+                              ? "bg-amber-950/30"
+                              : gasSwitched
+                              ? "bg-cyan-950/30"
+                              : r.phase === "SWITCH"
+                              ? "bg-slate-950/60 text-slate-400"
+                              : ""
+                          }
+                        >
+                          <td className="py-1.5 font-bold text-white">
+                            {r.depthLabel}
+                          </td>
+                          <td className="py-1.5 text-amber-400 font-bold">
+                            {r.timeMin}m
+                          </td>
+                          <td className="py-1.5 text-slate-300">
+                            {r.runTimeMin}m
+                          </td>
+                          <td className="py-1.5 text-cyan-300 font-semibold">
+                            {r.activeGasName}
+                            {gasSwitched && (
+                              <span className="ml-1 text-[9px] bg-cyan-500/30 text-cyan-200 px-1 py-0.5 rounded">
+                                SW
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-1.5 text-slate-300">{r.activeSp}</td>
+                          <td className="py-1.5 text-slate-400">{r.cns}%</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
@@ -1868,10 +2677,10 @@ export default function DecoPlanner() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
-                    {/* Fixed Pre-Ascent Rows: Descent, Bottom, and OC Problem Solving */}
+                    {/* 1. Descent Row */}
                     <tr>
                       <td className="py-1.5 font-bold text-slate-300">
-                        0 → {bottomDepthFt} ft (Desc)
+                        0 → {safeDepthFt} ft (Desc)
                       </td>
                       <td className="py-1.5 text-emerald-400">
                         {ccrPlan.profileRows[0]?.timeMin}m
@@ -1892,9 +2701,10 @@ export default function DecoPlanner() {
                       <td className="py-1.5 text-slate-400">On CCR Loop</td>
                     </tr>
 
+                    {/* 2. Bottom Row */}
                     <tr className="bg-purple-950/20">
                       <td className="py-1.5 font-bold text-white">
-                        {bottomDepthFt} ft (Bottom)
+                        {safeDepthFt} ft (Bottom)
                       </td>
                       <td className="py-1.5 text-emerald-400 font-bold">
                         {ccrPlan.profileRows[1]?.timeMin}m
@@ -1915,10 +2725,11 @@ export default function DecoPlanner() {
                       <td className="py-1.5 text-slate-400">On CCR Loop</td>
                     </tr>
 
+                    {/* 3. OC Problem Solving at Bottom */}
                     {settings.ocProblemTimeMin > 0 && (
                       <tr className="bg-amber-950/25">
                         <td className="py-1.5 font-bold text-amber-300">
-                          {bottomDepthFt} ft (BO Solve)
+                          {safeDepthFt} ft (BO Solve)
                         </td>
                         <td className="py-1.5 text-slate-500">-</td>
                         <td className="py-1.5 text-slate-500">-</td>
@@ -1928,62 +2739,117 @@ export default function DecoPlanner() {
                           +{settings.ocProblemTimeMin}m
                         </td>
                         <td className="py-1.5 text-amber-200">
-                          {bottomTimeMin + settings.ocProblemTimeMin}m
+                          {safeBottomMin + settings.ocProblemTimeMin}m
                         </td>
                         <td className="py-1.5 text-cyan-300 font-bold">
-                          {
-                            ocBailoutPlan.profileRows.find(
-                              (r) => r.phase === "PROBLEM"
-                            )?.activeGasName
-                          }
+                          {unifiedBothRows.bottomOcGas}
+                          <span className="ml-1 text-[9px] bg-amber-500/30 text-amber-200 px-1 py-0.5 rounded">
+                            BO
+                          </span>
                         </td>
                       </tr>
                     )}
 
-                    {/* All Deco Stops from First Stop up to Last Stop (10ft/15ft/20ft) */}
-                    {Array.from(
-                      new Set([
-                        ...ccrPlan.stops.map((s) => s.depthFt),
-                        ...ocBailoutPlan.stops.map((s) => s.depthFt),
-                      ])
-                    )
-                      .sort((a, b) => b - a)
-                      .map((depth) => {
-                        const ccrStop = ccrPlan.stops.find(
-                          (s) => s.depthFt === depth
-                        );
-                        const boStop = ocBailoutPlan.stops.find(
-                          (b) => b.depthFt === depth
-                        );
-                        return (
-                          <tr key={depth}>
-                            <td className="py-1.5 font-bold text-white">
-                              {depth} ft Stop
-                            </td>
-                            <td className="py-1.5 text-emerald-400 font-bold">
-                              {ccrStop ? `${ccrStop.timeMin}m` : "-"}
-                            </td>
-                            <td className="py-1.5 text-slate-300">
-                              {ccrStop ? `${ccrStop.runTimeMin}m` : "-"}
-                            </td>
-                            <td className="py-1.5 text-emerald-300">
-                              {ccrStop ? ccrStop.activeSp : "-"}
-                            </td>
-                            <td className="py-1.5 text-purple-300 font-semibold">
-                              {ccrStop ? ccrStop.activeGasName : "-"}
-                            </td>
-                            <td className="py-1.5 text-amber-300 font-bold">
-                              {boStop ? `${boStop.timeMin}m` : "-"}
-                            </td>
-                            <td className="py-1.5 text-amber-200/80">
-                              {boStop ? `${boStop.runTimeMin}m` : "-"}
-                            </td>
-                            <td className="py-1.5 text-cyan-300">
-                              {boStop ? boStop.activeGasName : "-"}
-                            </td>
-                          </tr>
-                        );
-                      })}
+                    {/* 4. Intermediate Ascent & Deep Switch Brackets (Bottom -> First Stop) */}
+                    {unifiedBothRows.ascentBands.map((b) => (
+                      <tr
+                        key={b.id}
+                        className={
+                          b.ccrSwitched || b.ocSwitched || b.spBoosted
+                            ? "bg-cyan-950/20"
+                            : "bg-slate-950/40 text-slate-300"
+                        }
+                      >
+                        <td className="py-1.5 font-semibold text-slate-200">
+                          {b.label}
+                        </td>
+                        <td className="py-1.5 text-emerald-400/90">
+                          {b.transitMin}m
+                        </td>
+                        <td className="py-1.5 text-slate-300">{b.ccrRun}m</td>
+                        <td className="py-1.5 text-emerald-300">
+                          {b.sp}
+                          {b.spBoosted && (
+                            <span className="ml-1 text-[9px] bg-emerald-500/30 text-emerald-200 px-1 py-0.5 rounded">
+                              ↑SP
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-1.5 text-purple-300 font-semibold">
+                          {b.ccrDil}
+                          {b.ccrSwitched && (
+                            <span className="ml-1 text-[9px] bg-purple-500/30 text-purple-200 px-1 py-0.5 rounded">
+                              FLUSH
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-1.5 text-amber-300/90">
+                          {b.transitMin}m
+                        </td>
+                        <td className="py-1.5 text-amber-200/80">{b.ocRun}m</td>
+                        <td className="py-1.5 text-cyan-300 font-semibold">
+                          {b.ocGas}
+                          {b.ocSwitched && (
+                            <span className="ml-1 text-[9px] bg-cyan-500/30 text-cyan-200 px-1 py-0.5 rounded">
+                              SW
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+
+                    {/* 5. Decompression Stops & Shallow Switch Depths */}
+                    {unifiedBothRows.stopRows.map((row) => (
+                      <tr
+                        key={row.depth}
+                        className={
+                          row.ccrSwitched || row.ocSwitched || row.spBoosted
+                            ? "bg-slate-800/40"
+                            : ""
+                        }
+                      >
+                        <td className="py-1.5 font-bold text-white">
+                          {row.depth} ft{" "}
+                          {row.ccrStop || row.boStop ? "Stop" : "Switch"}
+                        </td>
+                        <td className="py-1.5 text-emerald-400 font-bold">
+                          {row.ccrStop ? `${row.ccrStop.timeMin}m` : "Pass"}
+                        </td>
+                        <td className="py-1.5 text-slate-300">
+                          {row.ccrStop ? `${row.ccrStop.runTimeMin}m` : "-"}
+                        </td>
+                        <td className="py-1.5 text-emerald-300">
+                          {row.sp}
+                          {row.spBoosted && (
+                            <span className="ml-1 text-[9px] bg-emerald-500/30 text-emerald-200 px-1 py-0.5 rounded">
+                              ↑SP
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-1.5 text-purple-300 font-semibold">
+                          {row.ccrDil}
+                          {row.ccrSwitched && (
+                            <span className="ml-1 text-[9px] bg-purple-500/30 text-purple-200 px-1 py-0.5 rounded">
+                              FLUSH
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-1.5 text-amber-300 font-bold">
+                          {row.boStop ? `${row.boStop.timeMin}m` : "Pass"}
+                        </td>
+                        <td className="py-1.5 text-amber-200/80">
+                          {row.boStop ? `${row.boStop.runTimeMin}m` : "-"}
+                        </td>
+                        <td className="py-1.5 text-cyan-300 font-semibold">
+                          {row.ocGas}
+                          {row.ocSwitched && (
+                            <span className="ml-1 text-[9px] bg-cyan-500/30 text-cyan-200 px-1 py-0.5 rounded">
+                              SW
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               )}
@@ -2010,7 +2876,7 @@ export default function DecoPlanner() {
             <p className="text-xs text-slate-400">
               Sync your Petrel 3 or Perdix 2 to Subsurface-mobile on your phone,
               export the dive as XML/SSRF, and load it below to compare against
-              your current {bottomDepthFt}ft / {bottomTimeMin}m plan.
+              your current {safeDepthFt}ft / {safeBottomMin}m plan.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-2">
@@ -2052,7 +2918,7 @@ export default function DecoPlanner() {
                   <span className="text-sm font-bold text-white">
                     {coachingMetrics.maxActualDepth}ft{" "}
                     <span className="text-[10px] text-slate-500">
-                      (Plan {bottomDepthFt}ft)
+                      (Plan {safeDepthFt}ft)
                     </span>
                   </span>
                 </div>

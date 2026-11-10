@@ -10,12 +10,18 @@ import {
   FastForward,
   ChevronLeft,
   ChevronRight,
+  Eye,
 } from "lucide-react";
 import { DRILL_SCENARIOS, DrillLevel } from "../lib/drillbank";
+
+const LETTERS = ["A", "B", "C", "D"];
 
 export default function DrillSimulator() {
   const [levelFilter, setLevelFilter] = useState<"ALL" | DrillLevel>("ALL");
   const [currentDrillIdx, setCurrentDrillIdx] = useState(0);
+  const [shuffleGeneration, setShuffleGeneration] = useState(0);
+  const [rawDisplayMode, setRawDisplayMode] = useState(true);
+
   const [typedText, setTypedText] = useState("");
   const [isTypingDone, setIsTypingDone] = useState(false);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
@@ -30,6 +36,18 @@ export default function DrillSimulator() {
   const activeDrill =
     filteredDrills[currentDrillIdx % filteredDrills.length] ||
     DRILL_SCENARIOS[0];
+
+  // Dynamically shuffle option positions every time a scenario loads
+  const shuffledOptions = useMemo(() => {
+    if (!activeDrill) return [];
+    const copy = [...activeDrill.options];
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDrill, shuffleGeneration]);
 
   // Typewriter effect whenever activeDrill changes
   useEffect(() => {
@@ -52,14 +70,17 @@ export default function DrillSimulator() {
     }, 18);
 
     return () => clearInterval(interval);
-  }, [activeDrill]);
+  }, [activeDrill, shuffleGeneration]);
 
-  // Smart Shuffle: Picks an unseen drill from the filtered pool first before repeating
   const randomizeNextDrill = () => {
+    setShuffleGeneration((g) => g + 1);
     if (filteredDrills.length <= 1) return;
+
     const unseenIndices = filteredDrills
       .map((d, idx) => ({ id: d.id, idx }))
-      .filter((item) => !seenIds.includes(item.id) && item.idx !== currentDrillIdx);
+      .filter(
+        (item) => !seenIds.includes(item.id) && item.idx !== currentDrillIdx
+      );
 
     if (unseenIndices.length > 0) {
       const pick =
@@ -67,7 +88,6 @@ export default function DrillSimulator() {
       setSeenIds([...seenIds, pick.id]);
       setCurrentDrillIdx(pick.idx);
     } else {
-      // Pool exhausted—reset deck and pick a random one
       const next = (currentDrillIdx + 1) % filteredDrills.length;
       setSeenIds([filteredDrills[next].id]);
       setCurrentDrillIdx(next);
@@ -80,27 +100,50 @@ export default function DrillSimulator() {
     if (!seenIds.includes(activeDrill.id)) {
       setSeenIds([...seenIds, activeDrill.id]);
     }
-    const isRight = activeDrill.options[idx].isCorrect;
+    const isRight = shuffledOptions[idx]?.isCorrect;
     setScore((prev) => ({
       correct: prev.correct + (isRight ? 1 : 0),
       attempted: prev.attempted + 1,
     }));
   };
 
+  const shortTabLabel = (lvl: "ALL" | DrillLevel) => {
+    if (lvl === "ALL") return "ALL";
+    if (lvl === "P2 Hardware") return "P2 Rig";
+    if (lvl === "Mod 1: Air/EANx") return "Mod 1";
+    if (lvl === "Mod 2: Normoxic") return "Mod 2";
+    return "Mod 3";
+  };
+
   return (
     <div className="flex-1 flex flex-col justify-between gap-3.5">
-      {/* Top Filter & Score Bar */}
+      {/* Top Filter, Hard-Mode Toggle & Score Bar */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5 space-y-2">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-[10px] font-mono uppercase text-amber-400 font-bold flex items-center gap-1">
-            <Filter className="w-3.5 h-3.5" /> Filter Certification / Rig Level (
-            {filteredDrills.length} Scenarios)
+            <Filter className="w-3.5 h-3.5" /> {filteredDrills.length} Scenarios
           </span>
-          <div className="flex items-center gap-1.5 text-xs font-mono text-emerald-400 bg-slate-950 px-2.5 py-0.5 rounded-lg border border-slate-800">
-            <Award className="w-3.5 h-3.5" />
-            <span>
-              Score: {score.correct}/{score.attempted}
-            </span>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setRawDisplayMode(!rawDisplayMode)}
+              className={`px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold border flex items-center gap-1 transition-all ${
+                rawDisplayMode
+                  ? "bg-purple-500/20 border-purple-400 text-purple-200"
+                  : "bg-slate-950 border-slate-800 text-slate-400"
+              }`}
+              title="Raw Display hides red pulsing cell highlights so you have to evaluate PPO2 yourself"
+            >
+              <Eye className="w-3 h-3" />
+              {rawDisplayMode ? "RAW DISPLAY" : "COLOR HINTS"}
+            </button>
+
+            <div className="flex items-center gap-1 text-xs font-mono text-emerald-400 bg-slate-950 px-2.5 py-0.5 rounded-lg border border-slate-800">
+              <Award className="w-3.5 h-3.5" />
+              <span>
+                {score.correct}/{score.attempted}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -109,9 +152,9 @@ export default function DrillSimulator() {
             [
               "ALL",
               "P2 Hardware",
-              "Tec 40 CCR",
-              "Tec 60 CCR",
-              "Tec 100 CCR",
+              "Mod 1: Air/EANx",
+              "Mod 2: Normoxic",
+              "Mod 3: Hypoxic",
             ] as const
           ).map((lvl) => (
             <button
@@ -119,6 +162,7 @@ export default function DrillSimulator() {
               onClick={() => {
                 setLevelFilter(lvl);
                 setCurrentDrillIdx(0);
+                setShuffleGeneration((g) => g + 1);
               }}
               className={`py-1.5 px-1 rounded-lg text-[10px] font-bold transition-all truncate ${
                 levelFilter === lvl
@@ -126,13 +170,13 @@ export default function DrillSimulator() {
                   : "bg-slate-950 text-slate-400 hover:text-white border border-slate-800"
               }`}
             >
-              {lvl === "P2 Hardware" ? "P2 Rig" : lvl.replace(" CCR", "")}
+              {shortTabLabel(lvl)}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Simulated Shearwater Handset Telemetry Header */}
+      {/* Simulated Wrist Handset Telemetry Header */}
       <div className="bg-black border-2 border-slate-700 rounded-2xl p-3.5 font-mono shadow-inner">
         <div className="flex justify-between items-center text-[11px] text-cyan-400 border-b border-slate-800 pb-1.5 mb-2">
           <span>DEPTH: {activeDrill.depthFt} FT</span>
@@ -144,7 +188,8 @@ export default function DrillSimulator() {
         <div className="grid grid-cols-3 text-center py-2 bg-slate-950 rounded-xl border border-slate-800 mb-2">
           {activeDrill.cells.map((c, idx) => {
             const num = parseFloat(c);
-            const isDanger = isNaN(num) || num > 1.6 || num < 0.45;
+            const isDanger =
+              !rawDisplayMode && (isNaN(num) || num > 1.6 || num < 0.45);
             return (
               <div key={idx}>
                 <span className="text-[10px] text-slate-500 block">
@@ -195,7 +240,7 @@ export default function DrillSimulator() {
             )}
           </div>
 
-          <p className="text-xs sm:text-sm text-slate-100 font-mono leading-relaxed min-h-[105px] bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+          <p className="text-xs sm:text-sm text-slate-100 font-mono leading-relaxed min-h-[100px] bg-slate-950/60 p-3 rounded-xl border border-slate-800">
             {typedText}
             {!isTypingDone && (
               <span className="inline-block w-2 h-4 bg-amber-400 ml-1 animate-pulse" />
@@ -203,13 +248,13 @@ export default function DrillSimulator() {
           </p>
         </div>
 
-        {/* Multiple Choice Options Appear When Typing Finishes */}
+        {/* Dynamically Shuffled, Equal-Length Multiple Choice Options */}
         {isTypingDone && (
           <div className="space-y-2.5 mt-3 pt-3 border-t border-slate-800">
             <span className="text-[10px] font-mono uppercase text-slate-400 block">
               SELECT IMMEDIATE RESPONSE:
             </span>
-            {activeDrill.options.map((opt, idx) => {
+            {shuffledOptions.map((opt, idx) => {
               const isSelected = selectedOption === idx;
               let btnStyle =
                 "bg-slate-950 border-slate-700 text-slate-200 hover:border-amber-500/50";
@@ -231,7 +276,12 @@ export default function DrillSimulator() {
                   className={`w-full p-3 rounded-xl border text-left text-xs leading-relaxed transition-all ${btnStyle}`}
                 >
                   <div className="flex items-start justify-between gap-2 font-semibold">
-                    <span>{opt.label}</span>
+                    <span>
+                      <strong className="text-amber-400 font-mono mr-1.5">
+                        {LETTERS[idx]}.
+                      </strong>
+                      {opt.label}
+                    </span>
                     {selectedOption !== null && opt.isCorrect && (
                       <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                     )}
@@ -239,7 +289,8 @@ export default function DrillSimulator() {
                       <XCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
                     )}
                   </div>
-                  {(isSelected || (selectedOption !== null && opt.isCorrect)) && (
+                  {(isSelected ||
+                    (selectedOption !== null && opt.isCorrect)) && (
                     <div className="mt-2 pt-2 border-t border-white/10 text-[11px] opacity-95 font-normal">
                       {opt.feedback}
                     </div>
@@ -251,15 +302,16 @@ export default function DrillSimulator() {
         )}
       </div>
 
-      {/* Footer Navigation: Previous / Random Shuffle / Next */}
+      {/* Footer Navigation */}
       <div className="flex items-center gap-2">
         <button
-          onClick={() =>
+          onClick={() => {
+            setShuffleGeneration((g) => g + 1);
             setCurrentDrillIdx(
               (currentDrillIdx - 1 + filteredDrills.length) %
                 filteredDrills.length
-            )
-          }
+            );
+          }}
           className="px-3.5 py-4 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white text-xs font-bold flex items-center justify-center"
           title="Previous scenario"
         >
@@ -275,9 +327,10 @@ export default function DrillSimulator() {
         </button>
 
         <button
-          onClick={() =>
-            setCurrentDrillIdx((currentDrillIdx + 1) % filteredDrills.length)
-          }
+          onClick={() => {
+            setShuffleGeneration((g) => g + 1);
+            setCurrentDrillIdx((currentDrillIdx + 1) % filteredDrills.length);
+          }}
           className="px-3.5 py-4 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white text-xs font-bold flex items-center justify-center"
           title="Next scenario in order"
         >
